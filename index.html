@@ -1,0 +1,2783 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+        <meta name="author" content="gloom,spite">
+        <meta name="description" content="Explore with me - Christmas Experiments 2017">
+        <meta property="og:title" content="Explore with me - Christmas Experiments 2017"/>
+        <meta property="og:type" content="website"/>
+        <meta property="og:url" content="http://christmasexperiments.com/2017/15/explore-with-me/"/>
+        <meta property="og:image" content="social/facebook.jpg"/>
+        <meta property="og:site_name" content="Explore with me - Christmas Experiments 2017"/>
+        <meta property="og:description" content="Explore with me - Christmas Experiments 2017"/>
+  		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+
+		<title>Explore with me - Christmas Experiments 2017</title>
+
+		<link rel="stylesheet" type="text/css" href="css/styles.css" media="screen" />
+
+	</head>
+	<body>
+
+		<div id="container"></div>
+		<div id="loading" ><p>Loading</p></div>
+		<div id="start" ><p>Click to<br/>E<strong>xp</strong>lore with me</p></div>
+
+		<script src="js/Common.js"></script>
+		<script src="js/three.min.js"></script>
+		<script src="js/OrbitControls.js"></script>
+		<script src="js/THREE.ShaderTexture.js"></script>
+		<script src="js/THREE.PingPongTexture.js"></script>
+		<script src="js/THREE.FBOHelper.js"></script>
+		<script src="js/Bloom.js"></script>
+		<script src="js/perlin.js"></script>
+		<script src="js/Maf.js"></script>
+		<script src="js/isMobile.min.js"></script>
+		<!--<script src="js/CCapture.all.min.js"></script>-->
+
+<script type="x-shader/x-vertex" id="ortho-vs" >
+precision highp float;
+
+attribute vec3 position;
+attribute vec2 uv;
+
+varying vec2 vUv;
+
+void main() {
+	vUv = uv;
+	gl_Position = vec4(position, 1.);
+}
+</script>
+
+<script type="x-shader/x-vertex" id="light-vs" >
+precision highp float;
+
+attribute vec3 position;
+attribute vec2 uv;
+
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+varying vec2 vUv;
+
+void main() {
+	vUv = uv;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+}
+</script>
+
+<script id="light-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform vec3 color;
+
+void main() {
+	gl_FragColor = vec4(color,1.5);
+}
+</script>
+
+<script type="x-shader/x-vertex" id="card-vs" >
+precision highp float;
+
+attribute vec3 position;
+attribute vec2 uv;
+
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+varying vec2 vUv;
+
+void main() {
+	vUv = uv;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+}
+</script>
+
+<script id="card-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D map;
+uniform float opacity;
+
+varying vec2 vUv;
+
+void main() {
+	vec4 c = texture2D(map,vUv);
+	gl_FragColor = c;
+	gl_FragColor.a *= opacity;
+}
+</script>
+
+<script type="x-shader/x-vertex" id="backdrop-vs" >
+precision highp float;
+
+attribute vec3 position;
+attribute vec2 uv;
+
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+uniform vec3 from;
+uniform vec3 to;
+
+varying vec2 vUv;
+varying vec3 vColor;
+
+void main() {
+	vUv = uv;
+	vColor = mix(from,to,vec3(mod(uv.x*2.,1.)));
+	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.);
+}
+</script>
+
+<script id="backdrop-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D map;
+uniform float opacity;
+uniform float time;
+
+varying vec2 vUv;
+varying vec3 vColor;
+
+vec3 mod289(vec3 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec2 mod289(vec2 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec3 permute(vec3 x) {
+  return mod289(((x*34.0)+1.0)*x);
+}
+
+float snoise(vec2 v)
+  {
+  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+                     -0.577350269189626,  // -1.0 + 2.0 * C.x
+                      0.024390243902439); // 1.0 / 41.0
+// First corner
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+
+// Other corners
+  vec2 i1;
+  //i1.x = step( x0.y, x0.x ); // x0.x > x0.y ? 1.0 : 0.0
+  //i1.y = 1.0 - i1.x;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  // x0 = x0 - 0.0 + 0.0 * C.xx ;
+  // x1 = x0 - i1 + 1.0 * C.xx ;
+  // x2 = x0 - 1.0 + 2.0 * C.xx ;
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+
+// Permutations
+  i = mod289(i); // Avoid truncation effects in permutation
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+		+ i.x + vec3(0.0, i1.x, 1.0 ));
+
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+
+// Gradients: 41 points uniformly over a line, mapped onto a diamond.
+// The ring size 17*17 = 289 is close to a multiple of 41 (41*7 = 287)
+
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+
+// Normalise gradients implicitly by scaling m
+// Approximation of: m *= inversesqrt( a0*a0 + h*h );
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+
+// Compute final noise value at P
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+float squareTurbulence(float v) {
+	return pow(v,2.);
+}
+
+float ridgedTurbulence(float v) {
+	return 1. - abs(v);
+}
+
+float fbm(vec2 uv) {
+	float value = 0.;
+	float amplitude = 1.;
+	for (int i = 0; i < 8; i++) {
+	    value += amplitude * abs(snoise(uv));
+	    uv *= 2.;
+	    amplitude *= .5;
+	}
+	return value;
+}
+
+void main() {
+	float n = fbm(vUv + time);
+	gl_FragColor = vec4(vColor+.2*(.5-n),1.);
+}
+</script>
+
+<script type="x-shader/x-vertex" id="sphere-vs" >
+precision highp float;
+
+attribute vec3 position;
+attribute vec2 uv;
+attribute vec3 offset;
+attribute vec4 rotation;
+attribute float size;
+attribute vec4 color;
+attribute vec3 normal;
+
+uniform mat4 modelMatrix;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+uniform mat3 normalMatrix;
+
+varying vec2 vUv;
+varying	vec3 vPosition;
+varying float vDistance;
+varying vec4 vColor;
+varying vec3 vViewPosition;
+varying vec3 vNormal;
+
+vec3 rotateVector( vec4 quat, vec3 vec ){
+	return vec + 2.0 * cross( cross( vec, quat.xyz ) + quat.w * vec, quat.xyz );
+}
+
+void main() {
+	vUv = uv;
+	vColor = color;
+	vec3 p = rotateVector(rotation,position) * size + offset;
+	vPosition = (modelMatrix * vec4(p, 1.)).xyz;
+	vDistance = abs(vPosition.z);
+	vec4 mVP = modelViewMatrix * vec4( p, 1.);
+	vNormal = normalMatrix * rotateVector(rotation,normal);
+	vViewPosition = mVP.xyz;
+	gl_Position = projectionMatrix * mVP;
+}
+</script>
+
+<script id="sphere-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform vec3 backgroundColor;
+uniform float emissive;
+uniform vec3 rimColor;
+
+varying vec4 vColor;
+varying vec2 vUv;
+varying	vec3 vPosition;
+varying float vDistance;
+varying vec3 vViewPosition;
+varying vec3 vNormal;
+
+void main() {
+	float f = sin(abs(20.*vUv.y))+ 2.*emissive;
+	f = smoothstep(.5,1.,f);
+
+	float d = vDistance;
+	d /= 15.;
+	d = smoothstep(.7, 1., d);
+	d = 1.-d;
+	vec3 n = normalize(vNormal);
+	float rim = 1. - smoothstep( 0., 1., max( 0., abs( dot( n, normalize( -vViewPosition.xyz ) ) ) ) );
+	gl_FragColor = vec4(mix(.5 * rim * rimColor +vColor.xyz*(1.5*vColor.a +.1*emissive) * f,backgroundColor,1.-d),d + f * vColor.a);
+
+}
+</script>
+
+<script id="scroll-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D source;
+uniform vec2 resolution;
+
+varying vec2 vUv;
+
+void main() {
+	vec2 i = vec2(0.,1.)/resolution;
+	vec4 s = texture2D(source,vUv-i);
+	if(vUv.y <= i.y ) s = vec4(1.);
+	gl_FragColor = s;
+}
+</script>
+
+<script id="terrain-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D source;
+uniform float time;
+uniform vec2 resolution;
+uniform float speed;
+
+varying vec2 vUv;
+
+vec3 mod289(vec3 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec2 mod289(vec2 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec3 permute(vec3 x) {
+  return mod289(((x*34.0)+1.0)*x);
+}
+
+float snoise(vec2 v)
+  {
+  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+                     -0.577350269189626,  // -1.0 + 2.0 * C.x
+                      0.024390243902439); // 1.0 / 41.0
+// First corner
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+
+// Other corners
+  vec2 i1;
+  //i1.x = step( x0.y, x0.x ); // x0.x > x0.y ? 1.0 : 0.0
+  //i1.y = 1.0 - i1.x;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  // x0 = x0 - 0.0 + 0.0 * C.xx ;
+  // x1 = x0 - i1 + 1.0 * C.xx ;
+  // x2 = x0 - 1.0 + 2.0 * C.xx ;
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+
+// Permutations
+  i = mod289(i); // Avoid truncation effects in permutation
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+		+ i.x + vec3(0.0, i1.x, 1.0 ));
+
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+
+// Gradients: 41 points uniformly over a line, mapped onto a diamond.
+// The ring size 17*17 = 289 is close to a multiple of 41 (41*7 = 287)
+
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+
+// Normalise gradients implicitly by scaling m
+// Approximation of: m *= inversesqrt( a0*a0 + h*h );
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+
+// Compute final noise value at P
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+float squareTurbulence(float v) {
+	return pow(v,2.);
+}
+
+float ridgedTurbulence(float v) {
+	return 1. - abs(v);
+}
+
+float fbm(vec2 uv) {
+	float value = 0.;
+	float amplitude = 1.;
+	for (int i = 0; i < 8; i++) {
+	    value += amplitude * abs(snoise(uv));
+	    uv *= 2.;
+	    amplitude *= .5;
+	}
+	return value;
+}
+
+void main() {
+
+	vec2 uv = vUv;
+	uv.y += speed*time;
+	float n = .5 * squareTurbulence(fbm(1.*uv));
+
+	vec4 s = vec4(n,0.,0.,1.);
+	gl_FragColor = s;
+
+}
+</script>
+
+<script id="terrain-shadow-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D heightMap;
+uniform vec2 resolution;
+uniform vec3 lightPosition;
+uniform vec3 lightColor;
+
+uniform vec4 sphereData[18];
+uniform vec4 sphereLight[18];
+uniform float pos;
+
+varying vec2 vUv;
+
+float blendOverlay(float base, float blend) {
+	return base<0.5?(2.0*base*blend):(1.0-2.0*(1.0-base)*(1.0-blend));
+}
+
+vec3 blendOverlay(vec3 base, vec3 blend) {
+	return vec3(blendOverlay(base.r,blend.r),blendOverlay(base.g,blend.g),blendOverlay(base.b,blend.b));
+}
+
+vec3 blendOverlay(vec3 base, vec3 blend, float opacity) {
+	return (blendOverlay(base, blend) * opacity + base * (1.0 - opacity));
+}
+
+vec3 applyHardLight(vec3 base, vec3 blend) {
+	return blendOverlay(blend,base);
+}
+
+vec3 applyScreen( vec3 base, vec3 blend ) {
+	return (1.0 - ((1.0 - base) * (1.0 - blend)));
+}
+
+float sampleOcclusion(vec2 uv, float offset){
+	vec2 inc = vec2(1.)/resolution;
+	float oh = texture2D(heightMap,uv).r + offset;
+	float th = lightPosition.y;
+	vec2 dir = vec2(.5)-(uv+vec2(-lightPosition.x,lightPosition.z)/20.);
+	float falloff = length(dir) * 20. + th;
+	float steps = 20.;//abs(dir.x)/inc.x;
+	//if( dir.y>dir.x) steps = abs(dir.y)/inc.y;
+	//steps = max(1.,steps);
+	int iSteps = int(steps);
+	dir /= steps;
+	float occlusion = 0.;
+	for(int i = 0; i < 300; i++ ){
+		if( i > iSteps ) {
+			break;
+		}
+		float sh = texture2D(heightMap,uv + dir*float(i)).r;
+		float vh = oh + float(i) * ( th - oh ) / steps;
+		if( sh > vh ) {
+			occlusion = 1.;
+		}
+	}
+	return ( 1. - sqrt(.1*falloff) ) * ( 1. - occlusion );
+}
+
+void main() {
+	vec3 brightness = vec3(0.);
+	float h = texture2D(heightMap,vUv).r;
+	vec3 p = vec3((vUv.x-.5)*20.,h,((1.-vUv.y)-.5)*20.);
+	for(int i=0;i<18;i++) {
+		float d = sphereData[i].w/pow(length(p-(sphereData[i].xyz-vec3(0.,0.,pos))),1.);
+		brightness += 2. * sphereLight[i].w * sphereLight[i].xyz * d;
+	}
+	float d = length(vec2(.5)-(vUv+vec2(-lightPosition.x,lightPosition.z)/20.));
+	float occlusion = sampleOcclusion(vUv,0.);
+	occlusion = .5 + .5 * occlusion;
+	float v = length(brightness);
+	vec3 l = mix(.75 + .25 *lightColor,vec3(1.),4.*d);
+	gl_FragColor = vec4(vec3(mix(.8,1.,h))*l*occlusion,.2);
+	gl_FragColor.rgb = mix(gl_FragColor.rgb,brightness,v);
+}
+</script>
+
+<script id="blur-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform vec2 resolution;
+uniform sampler2D source;
+uniform vec2 delta;
+
+varying vec2 vUv;
+
+vec4 blur5(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {
+  vec4 color = vec4(0.0);
+  vec2 off1 = vec2(1.3333333333333333) * direction;
+  color += texture2D(image, uv) * 0.29411764705882354;
+  color += texture2D(image, uv + (off1 / resolution)) * 0.35294117647058826;
+  color += texture2D(image, uv - (off1 / resolution)) * 0.35294117647058826;
+  return color;
+}
+
+vec4 blur9(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {
+  vec4 color = vec4(0.0);
+  vec2 off1 = vec2(1.3846153846) * direction;
+  vec2 off2 = vec2(3.2307692308) * direction;
+  color += texture2D(image, uv) * 0.2270270270;
+  color += texture2D(image, uv + (off1 / resolution)) * 0.3162162162;
+  color += texture2D(image, uv - (off1 / resolution)) * 0.3162162162;
+  color += texture2D(image, uv + (off2 / resolution)) * 0.0702702703;
+  color += texture2D(image, uv - (off2 / resolution)) * 0.0702702703;
+  return color;
+}
+
+vec4 blur13(sampler2D image, vec2 uv, vec2 resolution, vec2 direction) {
+  vec4 color = vec4(0.0);
+  vec2 off1 = vec2(1.411764705882353) * direction;
+  vec2 off2 = vec2(3.2941176470588234) * direction;
+  vec2 off3 = vec2(5.176470588235294) * direction;
+  color += texture2D(image, uv) * 0.1964825501511404;
+  color += texture2D(image, uv + (off1 / resolution)) * 0.2969069646728344;
+  color += texture2D(image, uv - (off1 / resolution)) * 0.2969069646728344;
+  color += texture2D(image, uv + (off2 / resolution)) * 0.09447039785044732;
+  color += texture2D(image, uv - (off2 / resolution)) * 0.09447039785044732;
+  color += texture2D(image, uv + (off3 / resolution)) * 0.010381362401148057;
+  color += texture2D(image, uv - (off3 / resolution)) * 0.010381362401148057;
+  return color;
+}
+
+void main() {
+	vec4 b  = blur5( source, vUv, resolution, delta );
+	gl_FragColor = b;
+}
+</script>
+
+<script id="highlight-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D source;
+uniform float threshold;
+
+varying vec2 vUv;
+
+void main() {
+	vec4 c = texture2D( source, vUv );
+	c.xyz -= 1.;
+	gl_FragColor = vec4( c.xyz, 1. );
+}
+</script>
+
+<script id="fxaa-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D inputTexture;
+
+uniform vec2 resolution;
+
+varying vec2 vUv;
+
+#define FXAA_SPAN_MAX 8.0
+#define FXAA_REDUCE_MUL   (1.0/FXAA_SPAN_MAX)
+#define FXAA_REDUCE_MIN   (1.0/128.0)
+#define FXAA_SUBPIX_SHIFT (1.0/4.0)
+vec3 FxaaPixelShader( vec4 uv, sampler2D tex, vec2 rcpFrame) {
+    vec3 rgbNW = texture2D(tex, uv.zw ).xyz;
+    vec3 rgbNE = texture2D(tex, uv.zw + vec2(1,0)*rcpFrame.xy ).xyz;
+    vec3 rgbSW = texture2D(tex, uv.zw + vec2(0,1)*rcpFrame.xy ).xyz;
+    vec3 rgbSE = texture2D(tex, uv.zw + vec2(1,1)*rcpFrame.xy ).xyz;
+    vec3 rgbM  = texture2D(tex, uv.xy ).xyz;
+    vec3 luma = vec3(0.299, 0.587, 0.114);
+    float lumaNW = dot(rgbNW, luma);
+    float lumaNE = dot(rgbNE, luma);
+    float lumaSW = dot(rgbSW, luma);
+    float lumaSE = dot(rgbSE, luma);
+    float lumaM  = dot(rgbM,  luma);
+    float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+    vec2 dir;
+    dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+    dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+    float dirReduce = max(
+        (lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL),
+        FXAA_REDUCE_MIN);
+    float rcpDirMin = 1.0/(min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = min(vec2( FXAA_SPAN_MAX,  FXAA_SPAN_MAX),
+          max(vec2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX),
+          dir * rcpDirMin)) * rcpFrame.xy;
+    vec3 rgbA = (1.0/2.0) * (
+        texture2D(tex, uv.xy + dir * (1.0/3.0 - 0.5) ).xyz +
+        texture2D(tex, uv.xy + dir * (2.0/3.0 - 0.5) ).xyz);
+    vec3 rgbB = rgbA * (1.0/2.0) + (1.0/4.0) * (
+        texture2D(tex, uv.xy + dir * (0.0/3.0 - 0.5) ).xyz +
+        texture2D(tex, uv.xy + dir * (3.0/3.0 - 0.5) ).xyz);
+    float lumaB = dot(rgbB, luma);
+    if((lumaB < lumaMin) || (lumaB > lumaMax)) return rgbA;
+    return rgbB;
+}
+
+void main() {
+	vec2 res = 1. / resolution;
+	vec2 uv = vUv;
+	vec4 aauv = vec4( uv, uv - (res * (0.5 + FXAA_SUBPIX_SHIFT)));
+	vec4 color = vec4(FxaaPixelShader( aauv, inputTexture, res ),1.);
+	gl_FragColor = color;
+}
+</script>
+
+<script id="bloom-fs" type="x-shader/x-fragment">
+precision highp float;
+
+uniform sampler2D base;
+uniform sampler2D level0;
+uniform sampler2D level1;
+uniform sampler2D level2;
+uniform sampler2D level3;
+uniform sampler2D level4;
+
+uniform vec2 resolution;
+uniform float boost;
+uniform float reduction;
+uniform float levels;
+
+varying vec2 vUv;
+
+float applySoftLightToChannel( float base, float blend ) {
+	return ((blend < 0.5) ? (2.0 * base * blend + base * base * (1.0 - 2.0 * blend)) : (sqrt(base) * (2.0 * blend - 1.0) + 2.0 * base * (1.0 - blend)));
+}
+
+vec3 applySoftLight( vec3 base, vec3 blend ) {
+	return vec3(
+	    applySoftLightToChannel(base.r, blend.r),
+	    applySoftLightToChannel(base.g, blend.g),
+	    applySoftLightToChannel(base.b, blend.b)
+	);
+}
+
+vec3 applyScreen( vec3 base, vec3 blend ) {
+	return (1.0 - ((1.0 - base) * (1.0 - blend)));
+}
+
+float blendOverlay(float base, float blend) {
+	return base<0.5?(2.0*base*blend):(1.0-2.0*(1.0-base)*(1.0-blend));
+}
+
+vec3 blendOverlay(vec3 base, vec3 blend) {
+	return vec3(blendOverlay(base.r,blend.r),blendOverlay(base.g,blend.g),blendOverlay(base.b,blend.b));
+}
+
+vec3 blendOverlay(vec3 base, vec3 blend, float opacity) {
+	return (blendOverlay(base, blend) * opacity + base * (1.0 - opacity));
+}
+
+void main() {
+	vec2 res = 1. / resolution;
+	vec2 uv = vUv;
+
+	vec4 bloom = vec4(0.);
+	if( levels > 0. ) bloom += texture2D( level0, vUv );
+	if( levels > 1. ) bloom += texture2D( level1, vUv );
+	if( levels > 2. ) bloom += texture2D( level2, vUv );
+	if( levels > 3. ) bloom += texture2D( level3, vUv );
+	if( levels > 4. ) bloom += texture2D( level4, vUv );
+
+	vec4 color = texture2D( base, vUv );
+	gl_FragColor = color+bloom;//vec4( blendOverlay(color.xyz, bloom.xyz,.5), 1.);
+}
+</script>
+
+<script type="x-shader/x-vertex" id="plane-vs" >
+precision highp float;
+
+attribute vec3 position;
+attribute vec2 uv;
+
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+uniform sampler2D heightMap;
+
+varying vec2 vUv;
+varying float vHeight;
+varying vec3 vPosition;
+varying float vDepth;
+
+void main() {
+
+	vUv = uv;
+	vec3 p = position;
+	float h = texture2D(heightMap,uv).r;
+	vHeight = h;
+	p.y += h;
+	vPosition = p;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4( p, 1. );
+	vDepth = clamp(-(modelViewMatrix * vec4( p, 1. )).z/10.,0.,1.);
+
+}
+</script>
+
+<script type="x-shader/x-fragment" id="plane-fs" >
+precision highp float;
+
+uniform sampler2D footprintTexture;
+uniform sampler2D shadowMap;
+uniform sampler2D heightMap;
+uniform vec3 backgroundColor;
+uniform float time;
+
+varying vec2 vUv;
+varying float vHeight;
+varying vec3 vPosition;
+varying float vDepth;
+
+float random(vec2 n, float offset ){
+	return .5 - fract(sin(dot(n.xy + vec2( offset, 0. ), vec2(12.9898, 78.233)))* 43758.5453);
+}
+
+vec3 mod289(vec3 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec2 mod289(vec2 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec3 permute(vec3 x) {
+  return mod289(((x*34.0)+1.0)*x);
+}
+
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+                     -0.577350269189626,  // -1.0 + 2.0 * C.x
+                      0.024390243902439); // 1.0 / 41.0
+// First corner
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+
+// Other corners
+  vec2 i1;
+  //i1.x = step( x0.y, x0.x ); // x0.x > x0.y ? 1.0 : 0.0
+  //i1.y = 1.0 - i1.x;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  // x0 = x0 - 0.0 + 0.0 * C.xx ;
+  // x1 = x0 - i1 + 1.0 * C.xx ;
+  // x2 = x0 - 1.0 + 2.0 * C.xx ;
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+
+// Permutations
+  i = mod289(i); // Avoid truncation effects in permutation
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+		+ i.x + vec3(0.0, i1.x, 1.0 ));
+
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+
+// Gradients: 41 points uniformly over a line, mapped onto a diamond.
+// The ring size 17*17 = 289 is close to a multiple of 41 (41*7 = 287)
+
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+
+// Normalise gradients implicitly by scaling m
+// Approximation of: m *= inversesqrt( a0*a0 + h*h );
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+
+// Compute final noise value at P
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+void main() {
+	float z = gl_FragCoord.z;
+	float d = 2. * length( vUv - .5 );
+	d = smoothstep(.7, 1., d);
+	float p = 1. - texture2D(footprintTexture, 3. * vUv - 1.).r;
+	vec3 shadow = texture2D(shadowMap, vUv).rgb;
+	shadow = mix(backgroundColor,shadow, length(shadow));
+	float sparkle = snoise(800.*(vUv - vec2(0.,.05 * time)));
+	sparkle = smoothstep(.8,1.,sparkle);
+	sparkle *= 1. - vDepth;
+	vec3 grain = vec3(.05*snoise(4000.*(vUv - vec2(0.,.05 * time))));
+	vec3 snowColor = vec3(mix(.8,1.,vHeight));
+	gl_FragColor.rgb = shadow.xyz;
+	gl_FragColor.rgb += grain;
+	float s = length(shadow.rgb);
+	gl_FragColor.rgb += sparkle * s;
+	gl_FragColor.a = 1.-d + sparkle*s;
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, backgroundColor, d);
+//	gl_FragColor = vec4(vec3(vDepth),1.);
+}
+</script>
+
+<script type="x-shader/x-fragment" id="final-fs" >
+precision highp float;
+
+uniform sampler2D inputTexture;
+uniform vec2 resolution;
+
+uniform float overall;
+
+uniform float boost;
+uniform float reduction;
+
+uniform float amount;
+uniform float time;
+
+varying vec2 vUv;
+
+float random(vec2 n, float offset ){
+	return .5 - fract(sin(dot(n.xy + vec2( offset, 0. ), vec2(12.9898, 78.233)))* 43758.5453);
+}
+
+vec3 gammaCorrect(vec3 color, float gamma){
+    return pow(color, vec3(1.0/gamma));
+}
+
+vec3 levelRange(vec3 color, float minInput, float maxInput){
+    return min(max(color - vec3(minInput), vec3(0.0)) / (vec3(maxInput) - vec3(minInput)), vec3(1.0));
+}
+
+vec3 finalLevels(vec3 color, float minInput, float gamma, float maxInput){
+    return gammaCorrect(levelRange(color, minInput, maxInput), gamma);
+}
+
+float applySoftLightToChannel( float base, float blend ) {
+	return ((blend < 0.5) ? (2.0 * base * blend + base * base * (1.0 - 2.0 * blend)) : (sqrt(base) * (2.0 * blend - 1.0) + 2.0 * base * (1.0 - blend)));
+}
+
+vec3 applySoftLight( vec3 base, vec3 blend ) {
+	return vec3(
+	    applySoftLightToChannel(base.r, blend.r),
+	    applySoftLightToChannel(base.g, blend.g),
+	    applySoftLightToChannel(base.b, blend.b)
+	);
+}
+
+void main() {
+
+    vec2 res = 1. / resolution;
+
+    vec4 g = texture2D(inputTexture,vUv);
+    vec4 r = texture2D(inputTexture,vUv-vec2(res.x,0.));
+    vec4 b = texture2D(inputTexture,vUv+vec2(res.x,0.));
+
+    vec4 color = vec4(r.r, g.g, b.b, 1. );
+	color += vec4( vec3( amount * random( vUv, time ) ), 1. );
+
+    vec2 position = vUv - .5;
+	float vignette = length( position );
+    vignette = boost - vignette * reduction;
+
+    color.rgb *= vignette;
+    color.rgb = finalLevels(color.rgb, 17./255.0, 1.22, 225.0/255.0);
+
+    //color.rgb = .5 * applySoftLight( color.rgb, vec3(0.,76.,250.)/255.)+.5*color.rgb;
+
+    gl_FragColor = overall*color;
+
+}
+
+</script>
+
+<script type="x-shader/x-vertex" id="foot-vs" >
+precision highp float;
+
+attribute vec3 position;
+attribute vec2 uv;
+
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+uniform sampler2D heightMap;
+uniform sampler2D footMap;
+uniform vec2 offset;
+
+varying float vColor;
+varying float vOpacity;
+
+void main() {
+
+	vec3 p = position;
+	vec2 uv2 = .5+(uv-.5)/40.;
+	uv2.x -= offset.x / 20.;
+	uv2.y += offset.y / 20.;
+	vec2 uv1 = uv;
+	uv1.y = 1. - uv1.y;
+	if(offset.x < 0.) {
+		uv1.x = 1.-uv1.x;
+	}
+	float h = texture2D(heightMap,uv2).r;
+	vec4 c = texture2D(footMap,uv1);
+	vOpacity = c.r;
+	vColor = .5;
+	h -= .05 * c.r;
+	p.y += h;
+	gl_Position = projectionMatrix * modelViewMatrix * vec4( p, 1. );
+
+}
+</script>
+
+<script type="x-shader/x-fragment" id="foot-fs" >
+precision highp float;
+
+uniform sampler2D footMap;
+
+varying float vColor;
+varying float vOpacity;
+
+void main() {
+	gl_FragColor = vec4(vec3(vColor),vOpacity);
+}
+</script>
+
+<script id="snow-vs" type="x-shader/x-vertex">
+precision highp float;
+
+attribute vec3 position;
+attribute vec3 offset;
+attribute vec2 uv;
+
+uniform mat4 modelMatrix;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+uniform vec2 dimensions;
+uniform vec2 resolution;
+uniform float scale;
+uniform vec3 color;
+uniform float delta;
+
+uniform sampler2D curPos;
+uniform sampler2D prevPos;
+
+varying vec2 vUv;
+varying vec3 vColor;
+
+const float PI = 3.14159265359;
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+vec2 rotate(vec2 v, float a) {
+	float s = sin(a);
+	float c = cos(a);
+	mat2 m = mat2(c, -s, s, c);
+	return m * v;
+}
+
+void main() {
+
+	vec2 luv = vec2( mod( offset.x, dimensions.x ) / dimensions.x, floor( offset.x / dimensions.y ) / dimensions.y );
+	vec4 lp = texture2D( curPos, luv );
+	vec4 lpp = texture2D( prevPos, luv );
+
+	vec4 tlp = projectionMatrix * modelViewMatrix * vec4( lp.xyz, 1. );
+	vec4 tlpp = projectionMatrix * modelViewMatrix * vec4( lpp.xyz, 1. );
+	float l = delta;//max(.5,length(tlp.xy - tlpp.xy));
+	vec2 tlp2 = tlp.xy/tlp.w;
+	vec2 tlpp2 = tlpp.xy/tlpp.w;
+	vec2 dir = normalize(tlp2 - tlpp2);
+	float aspect = resolution.x / resolution.y;
+	dir.x *= aspect;
+	vec2 perp = normalize(vec2(-dir.y,dir.x));
+	if( l == 1. ) {
+		dir = vec2(0.,1.);
+		perp = vec2( 1.,0.);
+	}
+	dir *= l;
+	perp /= l;
+
+	vec4 mVP = modelViewMatrix * vec4(lp.xyz,1.);
+	mVP.xy += ( dir.xy * position.x + perp.xy * position.y ) * scale;// * (lp.w/100.);
+	//mVP.xy += position.xy * scale;
+
+	//if( lpp.w < lp.w ) p.x = 1000000.;
+
+	vUv = uv;
+	vColor = vec3(1.);
+	float fogFactor = clamp(-lp.z/10.,0.,1.);
+	vColor *= vec3( 1. - fogFactor );
+	vColor = vec3(fogFactor );
+
+	gl_Position = projectionMatrix * mVP;
+
+}
+
+</script>
+
+<script id="snow-fs" type="x-shader/x-vertex">
+precision highp float;
+
+uniform sampler2D map;
+
+varying vec2 vUv;
+varying vec3 vColor;
+
+uniform float opacity;
+
+void main() {
+	vec2 uv = vUv;
+	/*vec2 barycenter = vec2( .5, .5+(.5-.435) );
+	float dist = 2. * length( vUv.xy - barycenter );
+	float d = smoothstep(.4,.6, dist);
+	d = clamp(d,0.,1.);
+	gl_FragColor = vec4( vColor, ( 1.- d ) * opacity);*/
+	gl_FragColor = texture2D(map,uv);
+	gl_FragColor.a *= opacity;
+}
+
+</script>
+
+<script id="trail-vs" type="x-shader/x-vertex">
+precision highp float;
+
+attribute vec3 position;
+attribute vec3 offset;
+attribute vec2 uv;
+
+uniform mat4 modelMatrix;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+uniform vec2 dimensions;
+uniform vec2 resolution;
+uniform float scale;
+uniform vec3 color;
+uniform float delta;
+
+uniform sampler2D curPos;
+uniform sampler2D prevPos;
+
+varying vec2 vUv;
+varying vec3 vColor;
+
+const float PI = 3.14159265359;
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+vec2 rotate(vec2 v, float a) {
+	float s = sin(a);
+	float c = cos(a);
+	mat2 m = mat2(c, -s, s, c);
+	return m * v;
+}
+
+void main() {
+
+	vec2 luv = vec2( mod( offset.x, dimensions.x ) / dimensions.x, floor( offset.x / dimensions.y ) / dimensions.y );
+	vec4 lp = texture2D( curPos, luv );
+	vec4 lpp = texture2D( prevPos, luv );
+
+	vec4 tlp = projectionMatrix * modelViewMatrix * vec4( lp.xyz, 1. );
+	vec4 tlpp = projectionMatrix * modelViewMatrix * vec4( lpp.xyz, 1. );
+	float l = delta;
+	vec2 tlp2 = tlp.xy/tlp.w;
+	vec2 tlpp2 = tlpp.xy/tlpp.w;
+	vec2 dir = normalize(tlp2 - tlpp2);
+	float aspect = resolution.x / resolution.y;
+	dir.x *= aspect;
+	vec2 perp = normalize(vec2(-dir.y,dir.x));
+	if( l == 1. ) {
+		dir = vec2(0.,1.);
+		perp = vec2( 1.,0.);
+	}
+	/*dir *= l;
+	perp /= l;*/
+
+	vec4 mVP = modelViewMatrix * vec4(lp.xyz,1.);
+	mVP.xy += ( dir.xy * position.x + perp.xy * position.y ) * scale * (lp.w / 100.);
+
+	vUv = uv;
+	vColor = color;
+	/*float fogFactor = clamp(-lp.z/10.,0.,1.);
+	vColor *= vec3( 1. - fogFactor );
+	vColor = vec3(fogFactor );
+	vColor = vec3(255.,234.,59.)/255.;*/
+
+	gl_Position = projectionMatrix * mVP;
+
+}
+
+</script>
+
+<script id="trail-fs" type="x-shader/x-vertex">
+precision highp float;
+
+varying vec2 vUv;
+varying vec3 vColor;
+
+uniform float opacity;
+
+void main() {
+
+	vec2 barycenter = vec2( .5, .5+(.5-.435) );
+	float dist = 2. * length( vUv.xy - barycenter );
+	float d = smoothstep(.4,.6, dist);
+	d = clamp(d,0.,1.);
+	gl_FragColor = vec4( vColor, ( 1.- d ) * opacity);
+}
+
+</script>
+
+<script type="x-shader/x-fragment" id="sim-fs" >
+precision highp float;
+
+uniform sampler2D source;
+uniform sampler2D seed;
+uniform vec2 resolution;
+uniform float time;
+uniform float persistence;
+uniform float speed;
+uniform float decay;
+uniform float spread;
+uniform float delta;
+
+varying vec2 vUv;
+
+vec4 mod289(vec4 x) {
+    return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+float mod289(float x) {
+    return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec4 permute(vec4 x) {
+    return mod289(((x*34.0)+1.0)*x);
+}
+
+float permute(float x) {
+    return mod289(((x*34.0)+1.0)*x);
+}
+
+
+vec4 taylorInvSqrt(vec4 r) {
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+float taylorInvSqrt(float r) {
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+vec4 grad4(float j, vec4 ip) {
+    const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+    vec4 p,s;
+
+    p.xyz = floor( fract (vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+    s = vec4(lessThan(p, vec4(0.0)));
+    p.xyz = p.xyz + (s.xyz*2.0 - 1.0) * s.www;
+
+    return p;
+}
+
+
+#define F4 0.309016994374947451
+
+vec4 simplexNoiseDerivatives (vec4 v) {
+    const vec4  C = vec4( 0.138196601125011,0.276393202250021,0.414589803375032,-0.447213595499958);
+
+    vec4 i  = floor(v + dot(v, vec4(F4)) );
+    vec4 x0 = v -   i + dot(i, C.xxxx);
+
+    vec4 i0;
+    vec3 isX = step( x0.yzw, x0.xxx );
+    vec3 isYZ = step( x0.zww, x0.yyz );
+    i0.x = isX.x + isX.y + isX.z;
+    i0.yzw = 1.0 - isX;
+    i0.y += isYZ.x + isYZ.y;
+    i0.zw += 1.0 - isYZ.xy;
+    i0.z += isYZ.z;
+    i0.w += 1.0 - isYZ.z;
+
+    vec4 i3 = clamp( i0, 0.0, 1.0 );
+    vec4 i2 = clamp( i0-1.0, 0.0, 1.0 );
+    vec4 i1 = clamp( i0-2.0, 0.0, 1.0 );
+
+    vec4 x1 = x0 - i1 + C.xxxx;
+    vec4 x2 = x0 - i2 + C.yyyy;
+    vec4 x3 = x0 - i3 + C.zzzz;
+    vec4 x4 = x0 + C.wwww;
+
+    i = mod289(i);
+    float j0 = permute( permute( permute( permute(i.w) + i.z) + i.y) + i.x);
+    vec4 j1 = permute( permute( permute( permute (
+             i.w + vec4(i1.w, i2.w, i3.w, 1.0 ))
+           + i.z + vec4(i1.z, i2.z, i3.z, 1.0 ))
+           + i.y + vec4(i1.y, i2.y, i3.y, 1.0 ))
+           + i.x + vec4(i1.x, i2.x, i3.x, 1.0 ));
+
+
+    vec4 ip = vec4(1.0/294.0, 1.0/49.0, 1.0/7.0, 0.0) ;
+
+    vec4 p0 = grad4(j0,   ip);
+    vec4 p1 = grad4(j1.x, ip);
+    vec4 p2 = grad4(j1.y, ip);
+    vec4 p3 = grad4(j1.z, ip);
+    vec4 p4 = grad4(j1.w, ip);
+
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    p4 *= taylorInvSqrt(dot(p4,p4));
+
+    vec3 values0 = vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2)); //value of contributions from each corner at point
+    vec2 values1 = vec2(dot(p3, x3), dot(p4, x4));
+
+    vec3 m0 = max(0.5 - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), 0.0); //(0.5 - x^2) where x is the distance
+    vec2 m1 = max(0.5 - vec2(dot(x3,x3), dot(x4,x4)), 0.0);
+
+    vec3 temp0 = -6.0 * m0 * m0 * values0;
+    vec2 temp1 = -6.0 * m1 * m1 * values1;
+
+    vec3 mmm0 = m0 * m0 * m0;
+    vec2 mmm1 = m1 * m1 * m1;
+
+    float dx = temp0[0] * x0.x + temp0[1] * x1.x + temp0[2] * x2.x + temp1[0] * x3.x + temp1[1] * x4.x + mmm0[0] * p0.x + mmm0[1] * p1.x + mmm0[2] * p2.x + mmm1[0] * p3.x + mmm1[1] * p4.x;
+    float dy = temp0[0] * x0.y + temp0[1] * x1.y + temp0[2] * x2.y + temp1[0] * x3.y + temp1[1] * x4.y + mmm0[0] * p0.y + mmm0[1] * p1.y + mmm0[2] * p2.y + mmm1[0] * p3.y + mmm1[1] * p4.y;
+    float dz = temp0[0] * x0.z + temp0[1] * x1.z + temp0[2] * x2.z + temp1[0] * x3.z + temp1[1] * x4.z + mmm0[0] * p0.z + mmm0[1] * p1.z + mmm0[2] * p2.z + mmm1[0] * p3.z + mmm1[1] * p4.z;
+    float dw = temp0[0] * x0.w + temp0[1] * x1.w + temp0[2] * x2.w + temp1[0] * x3.w + temp1[1] * x4.w + mmm0[0] * p0.w + mmm0[1] * p1.w + mmm0[2] * p2.w + mmm1[0] * p3.w + mmm1[1] * p4.w;
+
+    return vec4(dx, dy, dz, dw) * 49.0;
+}
+
+vec3 curlNoise(vec3 p) {
+
+	float t = .01 * time / ( 1000./60. );
+
+	vec4 xNoisePotentialDerivatives = vec4(0.0);
+	vec4 yNoisePotentialDerivatives = vec4(0.0);
+	vec4 zNoisePotentialDerivatives = vec4(0.0);
+
+	for (int i = 0; i < 3; ++i) {
+	    float scale = (1.0 / 2.0) * pow(2.0, float(i));
+
+	    float noiseScale = pow(persistence, float(i));
+	    if (persistence == 0.0 && i == 0) { //fix undefined behaviour
+	        noiseScale = 1.0;
+	    }
+
+	    xNoisePotentialDerivatives += simplexNoiseDerivatives(vec4(p * pow(2.0, float(i)), t)) * noiseScale * scale;
+	    yNoisePotentialDerivatives += simplexNoiseDerivatives(vec4((p + vec3(123.4, 129845.6, -1239.1)) * pow(2.0, float(i)), t)) * noiseScale * scale;
+	    zNoisePotentialDerivatives += simplexNoiseDerivatives(vec4((p + vec3(-9519.0, 9051.0, -123.0)) * pow(2.0, float(i)), t)) * noiseScale * scale;
+	}
+
+	vec3 noiseVelocity = vec3(
+		zNoisePotentialDerivatives[1] - yNoisePotentialDerivatives[2],
+		xNoisePotentialDerivatives[2] - zNoisePotentialDerivatives[0],
+		yNoisePotentialDerivatives[0] - xNoisePotentialDerivatives[1] );
+
+	return noiseVelocity;
+
+}
+
+void main() {
+	vec4 s = texture2D(source,vUv);
+	if( s.w <= 0. || s.w > 100. ) {
+		s = texture2D(seed,vUv);
+		s.xyz *= spread;
+	}else{
+		s.xyz += delta * speed * curlNoise( .1 * s.xyz);
+		s.z -= .01 * delta;
+		s.w -= decay * delta;
+	}
+	gl_FragColor = s;
+}
+</script>
+
+<script type="x-shader/x-fragment" id="sim2-fs" >
+precision highp float;
+
+uniform sampler2D source;
+uniform sampler2D seed;
+uniform vec2 resolution;
+uniform float time;
+uniform float persistence;
+uniform float speed;
+uniform float decay;
+uniform float spread;
+uniform float delta;
+uniform vec3 spawn;
+
+varying vec2 vUv;
+
+vec4 mod289(vec4 x) {
+    return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+float mod289(float x) {
+    return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec4 permute(vec4 x) {
+    return mod289(((x*34.0)+1.0)*x);
+}
+
+float permute(float x) {
+    return mod289(((x*34.0)+1.0)*x);
+}
+
+
+vec4 taylorInvSqrt(vec4 r) {
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+float taylorInvSqrt(float r) {
+    return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+vec4 grad4(float j, vec4 ip) {
+    const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+    vec4 p,s;
+
+    p.xyz = floor( fract (vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+    s = vec4(lessThan(p, vec4(0.0)));
+    p.xyz = p.xyz + (s.xyz*2.0 - 1.0) * s.www;
+
+    return p;
+}
+
+
+#define F4 0.309016994374947451
+
+vec4 simplexNoiseDerivatives (vec4 v) {
+    const vec4  C = vec4( 0.138196601125011,0.276393202250021,0.414589803375032,-0.447213595499958);
+
+    vec4 i  = floor(v + dot(v, vec4(F4)) );
+    vec4 x0 = v -   i + dot(i, C.xxxx);
+
+    vec4 i0;
+    vec3 isX = step( x0.yzw, x0.xxx );
+    vec3 isYZ = step( x0.zww, x0.yyz );
+    i0.x = isX.x + isX.y + isX.z;
+    i0.yzw = 1.0 - isX;
+    i0.y += isYZ.x + isYZ.y;
+    i0.zw += 1.0 - isYZ.xy;
+    i0.z += isYZ.z;
+    i0.w += 1.0 - isYZ.z;
+
+    vec4 i3 = clamp( i0, 0.0, 1.0 );
+    vec4 i2 = clamp( i0-1.0, 0.0, 1.0 );
+    vec4 i1 = clamp( i0-2.0, 0.0, 1.0 );
+
+    vec4 x1 = x0 - i1 + C.xxxx;
+    vec4 x2 = x0 - i2 + C.yyyy;
+    vec4 x3 = x0 - i3 + C.zzzz;
+    vec4 x4 = x0 + C.wwww;
+
+    i = mod289(i);
+    float j0 = permute( permute( permute( permute(i.w) + i.z) + i.y) + i.x);
+    vec4 j1 = permute( permute( permute( permute (
+             i.w + vec4(i1.w, i2.w, i3.w, 1.0 ))
+           + i.z + vec4(i1.z, i2.z, i3.z, 1.0 ))
+           + i.y + vec4(i1.y, i2.y, i3.y, 1.0 ))
+           + i.x + vec4(i1.x, i2.x, i3.x, 1.0 ));
+
+
+    vec4 ip = vec4(1.0/294.0, 1.0/49.0, 1.0/7.0, 0.0) ;
+
+    vec4 p0 = grad4(j0,   ip);
+    vec4 p1 = grad4(j1.x, ip);
+    vec4 p2 = grad4(j1.y, ip);
+    vec4 p3 = grad4(j1.z, ip);
+    vec4 p4 = grad4(j1.w, ip);
+
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    p4 *= taylorInvSqrt(dot(p4,p4));
+
+    vec3 values0 = vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2)); //value of contributions from each corner at point
+    vec2 values1 = vec2(dot(p3, x3), dot(p4, x4));
+
+    vec3 m0 = max(0.5 - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), 0.0); //(0.5 - x^2) where x is the distance
+    vec2 m1 = max(0.5 - vec2(dot(x3,x3), dot(x4,x4)), 0.0);
+
+    vec3 temp0 = -6.0 * m0 * m0 * values0;
+    vec2 temp1 = -6.0 * m1 * m1 * values1;
+
+    vec3 mmm0 = m0 * m0 * m0;
+    vec2 mmm1 = m1 * m1 * m1;
+
+    float dx = temp0[0] * x0.x + temp0[1] * x1.x + temp0[2] * x2.x + temp1[0] * x3.x + temp1[1] * x4.x + mmm0[0] * p0.x + mmm0[1] * p1.x + mmm0[2] * p2.x + mmm1[0] * p3.x + mmm1[1] * p4.x;
+    float dy = temp0[0] * x0.y + temp0[1] * x1.y + temp0[2] * x2.y + temp1[0] * x3.y + temp1[1] * x4.y + mmm0[0] * p0.y + mmm0[1] * p1.y + mmm0[2] * p2.y + mmm1[0] * p3.y + mmm1[1] * p4.y;
+    float dz = temp0[0] * x0.z + temp0[1] * x1.z + temp0[2] * x2.z + temp1[0] * x3.z + temp1[1] * x4.z + mmm0[0] * p0.z + mmm0[1] * p1.z + mmm0[2] * p2.z + mmm1[0] * p3.z + mmm1[1] * p4.z;
+    float dw = temp0[0] * x0.w + temp0[1] * x1.w + temp0[2] * x2.w + temp1[0] * x3.w + temp1[1] * x4.w + mmm0[0] * p0.w + mmm0[1] * p1.w + mmm0[2] * p2.w + mmm1[0] * p3.w + mmm1[1] * p4.w;
+
+    return vec4(dx, dy, dz, dw) * 49.0;
+}
+
+vec3 curlNoise(vec3 p) {
+
+	float t = .01 * time / ( 1000./60. );
+
+	vec4 xNoisePotentialDerivatives = vec4(0.0);
+	vec4 yNoisePotentialDerivatives = vec4(0.0);
+	vec4 zNoisePotentialDerivatives = vec4(0.0);
+
+	for (int i = 0; i < 3; ++i) {
+	    float scale = (1.0 / 2.0) * pow(2.0, float(i));
+
+	    float noiseScale = pow(persistence, float(i));
+	    if (persistence == 0.0 && i == 0) { //fix undefined behaviour
+	        noiseScale = 1.0;
+	    }
+
+	    xNoisePotentialDerivatives += simplexNoiseDerivatives(vec4(p * pow(2.0, float(i)), t)) * noiseScale * scale;
+	    yNoisePotentialDerivatives += simplexNoiseDerivatives(vec4((p + vec3(123.4, 129845.6, -1239.1)) * pow(2.0, float(i)), t)) * noiseScale * scale;
+	    zNoisePotentialDerivatives += simplexNoiseDerivatives(vec4((p + vec3(-9519.0, 9051.0, -123.0)) * pow(2.0, float(i)), t)) * noiseScale * scale;
+	}
+
+	vec3 noiseVelocity = vec3(
+		zNoisePotentialDerivatives[1] - yNoisePotentialDerivatives[2],
+		xNoisePotentialDerivatives[2] - zNoisePotentialDerivatives[0],
+		yNoisePotentialDerivatives[0] - xNoisePotentialDerivatives[1] );
+
+	return noiseVelocity;
+
+}
+
+void main() {
+	vec4 s = texture2D(source,vUv);
+	if( s.w <= 0. ) {
+		vec4 source = texture2D(seed,vUv);
+		s.xyz = spawn + source.rgb * spread;
+		s.a = source.a;
+	}else{
+		s.xyz += delta * speed * curlNoise( .1 * s.xyz);
+		s.z -= .01 * delta;
+		s.w -= decay * delta;
+	}
+	gl_FragColor = s;
+}
+</script>
+
+<script>
+
+'use strict';
+
+var container = document.getElementById('container');
+/*
+var capturer = new CCapture( {
+	verbose: false,
+	display: true,
+	framerate: 30,
+	motionBlurFrames: ( 960 / 30 ),
+	quality: 99,
+	format: 'webm',
+	timeLimit: 137,
+	frameLimit: 0,
+	autoSaveTime: 15,
+} );
+
+function capture() {
+	capturer.start();
+}
+*/
+/*var oRAF = requestAnimationFrame;
+var desiredFPS = 15;
+var timeLastFrame = performance.now();
+requestAnimationFrame = function(c) {
+	var timeToNextFrame = 1000 / desiredFPS - 4;// - ( performance.now() - timeLastFrame);
+	setTimeout(c, timeToNextFrame);
+	timeLastFrame = performance.now();
+}*/
+
+var floatType = THREE.FloatType;
+
+var raycaster = new THREE.Raycaster();
+var mouse = new THREE.Vector2();
+var intersectionPlane;
+
+function mod289Vec3(v) {
+	v.x - Math.floor(v.x * (1.0 / 289.0)) * 289.0;
+	v.y - Math.floor(v.y * (1.0 / 289.0)) * 289.0;
+	v.z - Math.floor(v.z * (1.0 / 289.0)) * 289.0;
+	return v;
+}
+
+function mod289Vec2(v) {
+	v.x - Math.floor(v.x * (1.0 / 289.0)) * 289.0;
+	v.y - Math.floor(v.y * (1.0 / 289.0)) * 289.0;
+	return v;
+}
+
+function permuteVec3(v) {
+	v.x = ((v.x*34.0)+1)*v.x;
+	v.y = ((v.x*34.0)+1)*v.y;
+	v.z = ((v.x*34.0)+1)*v.z;
+	return mod289Vec3(v);
+}
+
+function dot2D(a,b){
+	return a.x*b.x+a.y*b.y;
+}
+
+function dot3D(a,b){
+	return a.x*b.x+a.y*b.y+a.z*b.z;
+}
+
+function fract(v) {
+	return v - Math.floor(v);
+}
+
+function snoise(v) {
+
+	var C = new THREE.Vector4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+							0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+							-0.577350269189626,  // -1.0 + 2.0 * C.x
+							0.024390243902439); // 1.0 / 41.0
+	// First corner
+	var i = new THREE.Vector2()
+	var d = dot2D(v, new THREE.Vector2(C.y,C.y));
+	i.x = Math.floor(v.x + d );
+	i.y = Math.floor(v.y + d );
+	var x0 = new THREE.Vector2();
+	d = dot2D(i, new THREE.Vector2(C.x,C.x));
+	x0.x = v.x - i.x + d;
+	x0.y = v.y - i.y + d;
+
+	// Other corners
+	var i1 = (x0.x > x0.y) ? new THREE.Vector2(1.0, 0.0) : new THREE.Vector2(0.0, 1.0);
+	var x12 = new THREE.Vector4( x0.x + C.x, x0.y + C.x, x0.x + C.z, x0.y + C.z);
+	x12.x -= i1.x;
+	x12.y -= i1.y;
+
+	// Permutations
+	i = mod289Vec2(i); // Avoid truncation effects in permutation
+	var a = new THREE.Vector3(i.y, i.y+i1.y, i.y );
+	var b = new THREE.Vector3(i.x, i.x+i1.x, i.x );
+	var p = permuteVec3( permuteVec3(a).add(b));
+
+	var aa = new THREE.Vector2(x12.x,x12.y);
+	var ab = new THREE.Vector2(x12.z,x12.w);
+	var a = new THREE.Vector3(.5-dot2D(x0,x0), .5-dot2D(aa,aa), .5-dot2D(ab,ab));
+
+ 	var m = new THREE.Vector3().copy(a);
+ 	m.x = Math.max(m.x,0.);
+ 	m.y = Math.max(m.y,0.);
+ 	m.z = Math.max(m.z,0.);
+
+	m = m.multiply(m);
+	m = m.multiply(m);
+
+	// Gradients: 41 points uniformly over a line, mapped onto a diamond.
+	// The ring size 17*17 = 289 is close to a multiple of 41 (41*7 = 287)
+
+	var x = new THREE.Vector3(2*fract(p.x*C.w)-1, 2*fract(p.y*C.w)-1, 2*fract(p.z*C.w)-1);
+	var h = new THREE.Vector3(Math.abs(x.x)-.5,Math.abs(x.y)-.5,Math.abs(x.z)-.5);
+	var ox = new THREE.Vector3(Math.floor(x.x+.5),Math.floor(x.y+.5),Math.floor(x.z+.5));
+	var a0 = new THREE.Vector3().copy(x).sub(ox);
+
+	// Normalise gradients implicitly by scaling m
+	// Approximation of: m *= inversesqrt( a0*a0 + h*h );
+	m.x *= 1.79284291400159 - 0.85373472095314 * ( a0.x*a0.x + h.x*h.x );
+	m.y *= 1.79284291400159 - 0.85373472095314 * ( a0.y*a0.y + h.y*h.y );
+	m.z *= 1.79284291400159 - 0.85373472095314 * ( a0.z*a0.z + h.z*h.z );
+
+	// Compute final noise value at P
+	var g = new THREE.Vector3();
+	g.x  = a0.x  * x0.x  + h.x  * x0.y;
+	g.y = a0.y * x12.x + h.y * x12.y;
+	g.z = a0.z * x12.z + h.z * x12.w;
+	return 130.0 * dot3D(m, g);
+}
+
+function squareTurbulence(v) {
+	return Math.pow(v,2.);
+}
+
+function ridgedTurbulence(v) {
+	return 1. - Math.abs(v);
+}
+
+function fbm(uv) {
+	var value = 0.;
+	var amplitude = 1.;
+	for (var i = 0; i < 8; i++) {
+	    value += amplitude * Math.abs(snoise(uv));
+	    uv.multiplyScalar(2.);
+	    amplitude *= .5;
+	}
+	return value;
+}
+
+function map(uv) {
+	uv.y += terrainTexture.shader.uniforms.speed.value*terrainTexture.shader.uniforms.time.value;
+	var n = .5*squareTurbulence(fbm(uv));
+	return n;
+}
+
+var container, renderer, camera, controls, scene;
+var mesh;
+
+var helper;
+
+var container = document.getElementById( 'container' );
+
+var loader = new THREE.TextureLoader();
+var footprintTexture, gloomTexture, spiteTexture, exploreTexture, snowTexture;
+
+var startPromises = [
+	promiseLoadTexture('assets/footprint.png').then( function(res){ footprintTexture = res; } ),
+	promiseLoadTexture('assets/gloom.png').then( function(res){ gloomTexture = res; } ),
+	promiseLoadTexture('assets/spite.png').then( function(res){ spiteTexture = res; } ),
+	promiseLoadTexture('assets/explore.png').then( function(res){ exploreTexture = res; } ),
+	promiseLoadTexture('assets/snow.png').then( function(res){
+		snowTexture = res;
+		snowTexture.wrapS = snowTexture.wrapT = THREE.ClampToEdgeWrapping;
+	} ),
+]
+
+var track = new Audio();
+track.controls = !true;
+container.appendChild(track);
+var playPromise = new Promise( function( resolve,reject ) {
+	track.addEventListener('canplay',function(){
+		resolve();
+	});
+})
+startPromises.push(playPromise);
+
+var startDiv = document.getElementById('start');
+
+function startPlaying() {
+	startDiv.removeEventListener('click',startPlaying);
+	startDiv.style.display = 'none';
+	track.play();
+	//capture();
+}
+
+Promise.all(startPromises).then( function() {
+	document.getElementById('loading').style.display = 'none';
+	startDiv.style.display = 'block';
+	startDiv.addEventListener('click', startPlaying );
+});
+
+track.src = 'assets/80sxmasexperiments3.mp3';
+
+function promiseLoadTexture(file) {
+	return new Promise( function(resolve,reject) {
+		loader.load(file, function(res) {
+			resolve(res);
+		});
+	})
+}
+
+var terrainTexture, shadowTexture, blurHShadowTexture, blurVShadowTexture, fxaaTexture, finalTexture;
+var plane, baseFBO;
+var bloom;
+
+var footMesh;
+var footprints = [];
+
+function initLandscape() {
+
+	var terrainWidth = 256;
+	var terrainHeight = 256;
+
+	var terrainShader = new THREE.RawShaderMaterial( {
+		uniforms: {
+			time: { value: 0 },
+			source: { value: null },
+			resolution: { value: new THREE.Vector2(terrainWidth,terrainHeight)},
+			speed: {value: - .05 }
+		},
+		vertexShader: document.getElementById('ortho-vs').textContent,
+		fragmentShader: document.getElementById('terrain-fs').textContent,
+	} );
+
+	terrainTexture = new ShaderTexture( renderer, terrainShader, terrainWidth, terrainHeight, THREE.RGBAFormat, THREE.UnsignedByteType );
+
+	helper.attach( terrainTexture.fbo, 'terrain' );
+	helper.show(false);
+
+	var shadowWidth = 256;
+	var shadowHeight = 256;
+
+	var shadowShader = new THREE.RawShaderMaterial( {
+		uniforms: {
+			heightMap: { value: terrainTexture.fbo.texture },
+			resolution: { value: new THREE.Vector2(shadowWidth,shadowHeight)},
+			lightPosition: {value: new THREE.Vector3()},
+			sphereData: { value: sphereData },
+			sphereLight: { value: sphereLight },
+			lightColor: { value: new THREE.Color(0xffea3b)},
+			pos: {value:0}
+		},
+		vertexShader: document.getElementById('ortho-vs').textContent,
+		fragmentShader: document.getElementById('terrain-shadow-fs').textContent,
+		transparent: true
+	} );
+
+	shadowTexture = new ShaderTexture( renderer, shadowShader, shadowWidth, shadowHeight, THREE.RGBAFormat, THREE.UnsignedByteType );
+
+	helper.attach( shadowTexture.fbo, 'terrain shadow' );
+
+	var blurShadowShader = new THREE.RawShaderMaterial( {
+		uniforms: {
+			source: { value: shadowTexture.fbo.texture },
+			resolution: { value: new THREE.Vector2(shadowWidth,shadowHeight)},
+			delta: { value: new THREE.Vector2(1.,0.)},
+		},
+		vertexShader: document.getElementById('ortho-vs').textContent,
+		fragmentShader: document.getElementById('blur-fs').textContent,
+	} );
+
+	blurHShadowTexture = new ShaderTexture( renderer, blurShadowShader, shadowWidth, shadowHeight, THREE.RGBAFormat, THREE.UnsignedByteType );
+	helper.attach( blurHShadowTexture.fbo, 'blurh sterrain shadow' );
+	blurVShadowTexture = new ShaderTexture( renderer, blurShadowShader, shadowWidth, shadowHeight, THREE.RGBAFormat, THREE.UnsignedByteType );
+	helper.attach( blurVShadowTexture.fbo, 'blurv sterrain shadow' );
+
+	var footGeometry = new THREE.PlaneBufferGeometry(.5,.5,20,20);
+	footGeometry.applyMatrix( new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+	for( var j = 0; j < 10; j++ ) {
+		var footMaterial = new THREE.RawShaderMaterial({
+			uniforms: {
+				heightMap: { value: terrainTexture.fbo.texture },
+				shadowMap: { value: null },
+				footMap: { value: footprintTexture },
+				offset: { value: new THREE.Vector2(0,0) }
+			},
+			vertexShader: document.getElementById( 'foot-vs' ).textContent,
+			fragmentShader: document.getElementById( 'foot-fs' ).textContent,
+			transparent: true,
+			depthWrite: true,
+			depthTest: !true,
+			wireframe: !true,
+		})
+		footMesh = new THREE.Mesh(footGeometry, footMaterial);
+		footMesh.frustumCulled = false;
+		footMesh.renderOrder = 2;
+		footMesh.userData.name = 'Footprint';
+		scene.add(footMesh);
+		footprints.push( { mesh: footMesh, x: j % 2 ? -.15 : .15, z: j } );
+	}
+
+	var planeMaterial = new THREE.RawShaderMaterial({
+		uniforms:{
+			heightMap: { value: terrainTexture.fbo.texture },
+			shadowMap: { value: null },
+			backgroundColor: { value: new THREE.Color() },
+			time: { value: 0 }
+		},
+		vertexShader: document.getElementById( 'plane-vs' ).textContent,
+		fragmentShader: document.getElementById( 'plane-fs' ).textContent,
+		wireframe: !true,
+		transparent: true
+	});
+
+	var planeGeometry = new THREE.PlaneBufferGeometry( 20, 20 * terrainHeight/terrainWidth, terrainWidth, terrainHeight );
+	planeGeometry.applyMatrix( new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+
+	plane = new THREE.Mesh(
+	    planeGeometry,
+		planeMaterial
+	);
+	plane.renderOrder = 1;
+	plane.userData.name = 'Landscape';
+
+	scene.add(plane);
+
+}
+
+var sphereGroup = new THREE.Group();
+var sphereData = [], sphereLight = [], sphereOriginal = [];;
+var sphereMaterial;
+
+var sphereBeats = [
+	[74.5, 76.8, 79.1],
+	[75,   77.3, 79.6],
+	[75.5, 77.8, 80.1],
+
+	[83.7, 86, 88.3],
+	[84.2, 86.5, 88.8],
+	[84.7, 87, 89.3],
+
+	[92.8, 95.1, 97.4],
+	[93.3, 95.6, 97.9],
+	[93.8, 96.1, 98.4],
+
+	[102,   104.3, 106.6],
+	[102.5, 104.8, 107.1],
+	[103,   105.3, 107.6],
+
+	[111.2, 113.5, 115.8 ],
+	[111.7, 114,   116.3 ],
+	[112.2, 114.5, 116.8 ],
+
+	[111.2, 113.5, 115.8, 120.3, 122.6, 124.9 ],
+	[111.7, 114,   116.3, 120.8, 123.1, 125.4 ],
+	[112.2, 114.5, 116.8, 121.3, 123.6, 125.9 ],
+
+];
+
+function processSphereBeats(t) {
+	var adjustedT = t + .1;
+	var beats = [];
+	for(var j=0; j < sphereBeats.length; j++) {
+		var l = sphereBeats[j];
+		for(var k=0; k < l.length; k++){
+			var tt = l[k];
+			if( adjustedT >= tt && adjustedT <= tt+.3){
+				beats.push({id:j,l: (adjustedT-tt)/.3})
+			}
+		}
+	}
+	return beats;
+}
+
+var palette = [
+	new THREE.Color(0xf11d1d),
+	new THREE.Color(0xb7db55),
+	new THREE.Color(0xff9b2f),
+	new THREE.Color(0xe063fb),
+	new THREE.Color(0xf12b6c),
+	new THREE.Color(0xffe617),
+	new THREE.Color(0xffd2a1),
+	new THREE.Color(0xdda1ff)
+];
+
+var backdrop;
+
+function initBackdrop() {
+	backdrop = new THREE.Mesh(
+		new THREE.IcosahedronBufferGeometry(50,3),
+		new THREE.RawShaderMaterial({
+			uniforms: {
+				from: { value: new THREE.Color(0xa1b5d7) },
+				to: { value: new THREE.Color(0x0000000) },
+				time: { value: 0 }
+			},
+			vertexShader: document.getElementById('backdrop-vs').textContent,
+			fragmentShader: document.getElementById('backdrop-fs').textContent,
+			side: THREE.DoubleSide,
+		})
+	);
+	scene.add(backdrop);
+	backdrop.renderOrder = 6;
+	backdrop.userData.name = 'Backdrop';
+
+}
+
+function initSpheres() {
+
+	var geometry = new THREE.InstancedBufferGeometry();
+	var g = new THREE.IcosahedronBufferGeometry(1,3);
+	geometry.index = g.index;
+	geometry.attributes.position = g.attributes.position;
+	geometry.attributes.normal = g.attributes.normal;
+	geometry.attributes.uv = g.attributes.uv;
+
+	sphereMaterial = new THREE.RawShaderMaterial({
+		uniforms: {
+			backgroundColor: { value: new THREE.Color() },
+			rimColor: { value: new THREE.Color() },
+			emissive: { value: 0 },
+		},
+		vertexShader: document.getElementById('sphere-vs').textContent,
+		fragmentShader: document.getElementById('sphere-fs').textContent,
+		wireframe: !true,
+		transparent: true
+	})
+
+	var start = 1*60+14.5 + 2;
+	var patternLength = 9.25;
+	var sequenceLength = 2;
+
+	var positions = [];
+	var rotations = [];
+	var colors = [];
+	var sizes = [];
+
+	for( var i = 0; i < 6; i++ ) {
+		for( var j = 0; j < 3; j++ ) {
+			//for( var k = 0; k < 3; k++ ) {
+				var r = Maf.randomInRange(1,4);
+				if (Math.random()>.5) r *= -1;
+				var p = new THREE.Vector3(
+				    r,
+				    Maf.randomInRange(1,2),
+				    Maf.randomInRange(0,0) + globalSpeed * ( start + i * patternLength + j * sequenceLength /*+ k * .5*/ )
+				);
+				//var p = new THREE.Vector3(Maf.randomInRange(-4,4),Maf.randomInRange(1,2),Maf.randomInRange(-4,4))
+				positions.push(p.x);
+				positions.push(p.y);
+				positions.push(p.z);
+				var s = Maf.randomInRange(.2,1);
+				sizes.push(s);
+				var q = new THREE.Vector4(
+					Maf.randomInRange(-1,1),
+					Maf.randomInRange(-1,1),
+					Maf.randomInRange(-1,1),
+					Maf.randomInRange(-1,1)
+				).normalize();
+				rotations.push(q.x);
+				rotations.push(q.y);
+				rotations.push(q.z);
+				rotations.push(q.w);
+				sphereData.push(new THREE.Vector4(p.x,p.y,p.z,s));
+				sphereOriginal.push(new THREE.Vector4(p.x,p.y,p.z,s));
+				var c = palette[Math.floor(Math.random()*palette.length)];
+				colors.push(c.r);
+				colors.push(c.g);
+				colors.push(c.b);
+				colors.push(0);
+				sphereLight.push(c.r);
+				sphereLight.push(c.g);
+				sphereLight.push(c.b);
+				sphereLight.push(0);
+			//}
+		}
+	}
+
+	geometry.addAttribute( 'rotation', new THREE.InstancedBufferAttribute( new Float32Array( rotations ), 4 ) );
+	geometry.addAttribute( 'offset', new THREE.InstancedBufferAttribute( new Float32Array( positions ), 3 ) );
+	geometry.addAttribute( 'color', new THREE.InstancedBufferAttribute( new Float32Array( colors ), 4 ) );
+	geometry.addAttribute( 'size', new THREE.InstancedBufferAttribute( new Float32Array( sizes ), 1 ) );
+
+	geometry.getAttribute( 'offset' ).dynamic = true;
+	//geometry.getAttribute( 'color' ).dynamic = true;
+
+	sphereGroup = new THREE.Mesh(
+		geometry,
+		sphereMaterial
+	);
+	sphereGroup.frustumCulled = false;
+	sphereGroup.renderOrder = 3;
+	sphereGroup.userData.name = 'Spheres';
+
+	scene.add(sphereGroup);
+}
+
+var snow, snowSimulation;
+var trail, trailSimulation;
+
+function initTrail() {
+
+	var width = 64;
+	var height = 64;
+
+	var NUM_POINTS = width * height;
+
+	var positions = new THREE.WebGLRenderTarget( 1, 1, {
+		wrapS: THREE.ClampToEdgeWrapping,
+		wrapT: THREE.ClampToEdgeWrapping,
+		minFilter: THREE.NearestFilter,
+		magFilter: THREE.NearestFilter,
+		format: THREE.RGBAFormat,
+		type: floatType,
+		stencilBuffer: false,
+		depthBuffer: false,
+		generateMipmaps: false
+	});
+	positions.setSize(width,height);
+
+	var cur = new Float32Array(width*height*4);
+	var prev = new Float32Array(width*height*4);
+
+	var ptr = 0;
+	var radius = 1;
+	var tmp = new THREE.Vector3();
+	for( var y = 0; y < height; y++ ){
+		for( var x = 0; x < width; x++ ) {
+			var r = Maf.randomInRange(.5 * radius,radius);
+			tmp.set( Maf.randomInRange(-r,r), Maf.randomInRange(-r,r), Maf.randomInRange(-r,r) );
+			//tmp.normalize().multiplyScalar(r);
+			cur[ ptr + 0 ] = tmp.x;
+			cur[ ptr + 1 ] = tmp.y;
+			cur[ ptr + 2 ] = tmp.z;
+			cur[ ptr + 3 ] = Math.random() * 100;
+			prev[ ptr + 0 ] = tmp.x;
+			prev[ ptr + 1 ] = tmp.y;
+			prev[ ptr + 2 ] = tmp.z;
+			prev[ ptr + 3 ] = cur[ ptr + 3 ];
+			ptr += 4;
+		}
+	}
+
+	var curPos = new THREE.DataTexture( cur, width, height, THREE.RGBAFormat, floatType );
+	var prevPos = new THREE.DataTexture( prev, width, height, THREE.RGBAFormat, floatType );
+	curPos.needsUpdate = true;
+	prevPos.needsUpdate = true;
+	helper.attach( curPos, 'cur' );
+	helper.attach( prevPos, 'prev' );
+
+	var pData = [];
+	for( var j = 0; j < NUM_POINTS; j++ ) {
+		pData.push(j);
+		pData.push(0);
+		pData.push(0);
+	}
+
+	var particleGeometry = new THREE.InstancedBufferGeometry();
+	particleGeometry.maxInstancedCount = width*height;
+
+	particleGeometry.addAttribute( 'position', new THREE.Float32BufferAttribute( new Float32Array([0,-.58,0, .5,.29,0, -.5,.29,0]), 3 ) );
+	particleGeometry.addAttribute( 'uv', new THREE.Float32BufferAttribute( new Float32Array([.5,0, 1,1, 0,1]), 2 ) );
+	particleGeometry.addAttribute( 'offset', new THREE.InstancedBufferAttribute( new Float32Array( pData ), 3 ) );
+
+	var trailMaterial = new THREE.RawShaderMaterial( {
+		uniforms:{
+			scale: { value: .05 },
+			dimensions: { value: new THREE.Vector2(width,height)},
+			resolution: { value: new THREE.Vector2(0,0)},
+			delta: { value: 0 },
+			opacity: { value: .5 },
+			color: { value: new THREE.Color( 0xff00ff ) },
+			curPos: { value: curPos },
+			prevPos: { value: prevPos },
+		},
+		vertexShader: document.getElementById( 'trail-vs' ).textContent,
+		fragmentShader: document.getElementById( 'trail-fs' ).textContent,
+		depthTest: true,
+		depthWrite: false,
+		transparent: true,
+		wireframe: !true,
+		side: THREE.DoubleSide,
+		blending: THREE.AdditiveBlending
+	} );
+
+	trail = new THREE.Mesh( particleGeometry, trailMaterial );
+	scene.add( trail );
+	trail.frustumCulled = false;
+	trail.renderOrder = 5;
+	trail.userData.name = 'Trail';
+
+	var trailShader = new THREE.RawShaderMaterial( {
+		uniforms: {
+			source: { value: null },
+			seed: { value: curPos },
+			resolution: { value: new THREE.Vector2(width,height) },
+			time: { value: 0 },
+			persistence: { value: .5 },
+			speed: { value: .5 },
+			spread: { value: .5 },
+			decay: { value: .5 },
+			delta: { value: 0 },
+			spawn: { value: new THREE.Vector3() }
+		},
+		vertexShader: document.getElementById('ortho-vs').textContent,
+		fragmentShader: document.getElementById('sim2-fs').textContent,
+	} );
+
+	trailSimulation = new PingPongTexture( renderer, trailShader, width, height, THREE.RGBAFormat, floatType );
+
+	helper.attach( trailSimulation.front, 'front' );
+	helper.attach( trailSimulation.back, 'back' );
+
+}
+
+function initParticles() {
+
+	var width = 256;
+	var height = 256;
+
+	var NUM_POINTS = width * height;
+
+	var positions = new THREE.WebGLRenderTarget( 1, 1, {
+		wrapS: THREE.ClampToEdgeWrapping,
+		wrapT: THREE.ClampToEdgeWrapping,
+		minFilter: THREE.NearestFilter,
+		magFilter: THREE.NearestFilter,
+		format: THREE.RGBAFormat,
+		type: floatType,
+		stencilBuffer: false,
+		depthBuffer: false,
+		generateMipmaps: false
+	});
+	positions.setSize(width,height);
+
+	var cur = new Float32Array(width*height*4);
+	var prev = new Float32Array(width*height*4);
+
+	var ptr = 0;
+	var radius = 1;
+	var tmp = new THREE.Vector3();
+	for( var y = 0; y < height; y++ ){
+		for( var x = 0; x < width; x++ ) {
+			var r = Maf.randomInRange(.5 * radius,radius);
+			tmp.set( Maf.randomInRange(-r,r), Maf.randomInRange(-r,r), Maf.randomInRange(-r,r) );
+			//tmp.normalize().multiplyScalar(r);
+			cur[ ptr + 0 ] = tmp.x;
+			cur[ ptr + 1 ] = tmp.y;
+			cur[ ptr + 2 ] = tmp.z;
+			cur[ ptr + 3 ] = Math.random() * 100;
+			prev[ ptr + 0 ] = tmp.x;
+			prev[ ptr + 1 ] = tmp.y;
+			prev[ ptr + 2 ] = tmp.z;
+			prev[ ptr + 3 ] = cur[ ptr + 3 ];
+			ptr += 4;
+		}
+	}
+
+	var curPos = new THREE.DataTexture( cur, width, height, THREE.RGBAFormat, floatType );
+	var prevPos = new THREE.DataTexture( prev, width, height, THREE.RGBAFormat, floatType );
+	curPos.needsUpdate = true;
+	prevPos.needsUpdate = true;
+	helper.attach( curPos, 'cur' );
+	helper.attach( prevPos, 'prev' );
+
+	var pData = [];
+	for( var j = 0; j < NUM_POINTS; j++ ) {
+		pData.push(j);
+		pData.push(0);
+		pData.push(0);
+	}
+
+	var particleGeometry = new THREE.InstancedBufferGeometry();
+	particleGeometry.maxInstancedCount = width*height;
+
+	var planeGeometry = new THREE.BufferGeometry().fromGeometry( new THREE.PlaneGeometry(.5,.5) );
+	particleGeometry.addAttribute( 'position', new THREE.Float32BufferAttribute( planeGeometry.attributes.position.array, 3 ) );
+	particleGeometry.addAttribute( 'uv', new THREE.Float32BufferAttribute( planeGeometry.attributes.uv.array, 2 ) );
+	//particleGeometry.addAttribute( 'position', new THREE.Float32BufferAttribute( new Float32Array([0,-.58,0, .5,.29,0, -.5,.29,0]), 3 ) );
+	//particleGeometry.addAttribute( 'uv', new THREE.Float32BufferAttribute( new Float32Array([.5,0, 1,1, 0,1]), 2 ) );
+	particleGeometry.addAttribute( 'offset', new THREE.InstancedBufferAttribute( new Float32Array( pData ), 3 ) );
+
+	var snowMaterial = new THREE.RawShaderMaterial( {
+		uniforms:{
+			scale: { value: .1 },
+			dimensions: { value: new THREE.Vector2(width,height)},
+			resolution: { value: new THREE.Vector2(0,0)},
+			delta: { value: 0 },
+			opacity: { value: 1. },
+			color: { value: new THREE.Color( 0xffffff ) },
+			curPos: { value: curPos },
+			prevPos: { value: prevPos },
+			map: { value: snowTexture }
+		},
+		vertexShader: document.getElementById( 'snow-vs' ).textContent,
+		fragmentShader: document.getElementById( 'snow-fs' ).textContent,
+		depthTest: true,
+		depthWrite: false,
+		transparent: true,
+		wireframe: !true,
+		side: THREE.DoubleSide,
+		blending: THREE.AdditiveBlending
+	} );
+
+	snow = new THREE.Mesh( particleGeometry, snowMaterial );
+	scene.add( snow );
+	snow.renderOrder = 4;
+	snow.userData.name = 'Snow';
+	snow.frustumCulled = false;
+	snow.position.y = 5;
+	snow.position.z = 5;
+
+	var snowSimulationShader = new THREE.RawShaderMaterial( {
+		uniforms: {
+			source: { value: null },
+			seed: { value: curPos },
+			resolution: { value: new THREE.Vector2(width,height) },
+			time: { value: 0 },
+			persistence: { value: .5 },
+			speed: { value: .5 },
+			spread: { value: .5 },
+			decay: { value: .5 },
+			delta: { value: 0 }
+		},
+		vertexShader: document.getElementById('ortho-vs').textContent,
+		fragmentShader: document.getElementById('sim-fs').textContent,
+	} );
+
+	snowSimulation = new PingPongTexture( renderer, snowSimulationShader, width, height, THREE.RGBAFormat, floatType );
+
+	helper.attach( snowSimulation.front, 'snow front' );
+	helper.attach( snowSimulation.back, 'snow back' );
+
+}
+var resolution = new THREE.Vector2();
+var dummy, animate = true;
+
+var titleCard;
+function initTitles() {
+	titleCard = new THREE.Mesh(
+	    new THREE.PlaneBufferGeometry(2,1),
+	    new THREE.RawShaderMaterial({
+	    	uniforms: {
+	    		map: { value: spiteTexture },
+	    		opacity: { value: 0 }
+	    	},
+			vertexShader: document.getElementById('card-vs').textContent,
+			fragmentShader: document.getElementById('card-fs').textContent,
+	    	side: THREE.DoubleSide,
+	    	depthWrite: false,
+	    	depthTest: false,
+	    	transparent: true
+	    })
+	);
+	titleCard.rotation.y = Math.PI /2;
+	titleCard.position.y = 1.5;
+	scene.add(titleCard);
+	titleCard.renderOrder = 7;
+	titleCard.userData.name = 'Title Card';
+}
+function initScene() {
+
+	initBackdrop();
+	initTitles();
+	initTrail();
+	initLandscape();
+	initParticles();
+	initSpheres();
+
+	dummy = new THREE.Mesh(
+		new THREE.IcosahedronBufferGeometry(.5,3),
+		new THREE.RawShaderMaterial({
+			uniforms: {
+				color: { value: new THREE.Color(0xffea3b)}
+			},
+			vertexShader: document.getElementById('light-vs').textContent,
+			fragmentShader: document.getElementById('light-fs').textContent,
+		})
+	);
+	dummy.position.y = 1.1;
+	dummy.scale.set(.1,.1,.1);
+	dummy.renderOrder = 6;
+	dummy.userData.name = 'Dummy';
+	scene.add(dummy);
+
+	baseFBO = new THREE.WebGLRenderTarget( 1, 1, {
+		wrapS: THREE.ClampToEdgeWrapping,
+		wrapT: THREE.ClampToEdgeWrapping,
+		format: THREE.RGBAFormat,
+		type: floatType,
+		minFilter: THREE.LinearFilter,
+		magFilter: THREE.LinearFilter,
+		stencilBuffer: false,
+		depthBuffer: true
+	});
+
+	baseFBO.generateMipMaps = false;
+	baseFBO.flipY = true;
+
+	helper.attach( baseFBO, 'base' );
+
+	bloom = new Bloom(5);
+
+	var fxaaShader = new THREE.RawShaderMaterial( {
+		uniforms: {
+			inputTexture: { value: bloom.fbo.texture },
+			resolution: { value: resolution },
+		},
+		vertexShader: document.getElementById('ortho-vs').textContent,
+		fragmentShader: document.getElementById('fxaa-fs').textContent,
+	} );
+
+	fxaaTexture = new ShaderTexture( renderer, fxaaShader, 1, 1, null, null, THREE.NearestFilter, null, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping );
+	fxaaTexture.fbo.generateMipMaps = false;
+	helper.attach( fxaaTexture.fbo, 'FXAA' );
+
+	var finalShader = new THREE.RawShaderMaterial( {
+		uniforms: {
+			inputTexture: { value: bloom.fbo.texture },
+			resolution: { value: resolution },
+			overall: {value: 0 },
+			boost: { value: 1.1 },
+			reduction: { value: 1.1 },
+			amount: { value: .1 },
+			time: { value: 0 },
+		},
+		vertexShader: document.getElementById('ortho-vs').textContent,
+		fragmentShader: document.getElementById('final-fs').textContent,
+	} );
+
+	finalTexture = new ShaderTexture( renderer, finalShader, 1, 1, null, null, THREE.NearestFilter, null, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping )
+	finalTexture.fbo.generateMipMaps = false;
+	helper.attach( finalTexture.fbo, 'final' );
+
+	intersectionPlane = new THREE.Mesh( new THREE.PlaneGeometry( 10000, 10000 ), new THREE.MeshNormalMaterial( { side: THREE.DoubleSide, visible: true } ) );
+	intersectionPlane.material.visible = false;
+	intersectionPlane.userData.name = 'Intersection Plane';
+	scene.add( intersectionPlane );
+
+
+}
+
+var freeCamera = false;
+
+var controlsTimeout;
+function hideControls() {
+	track.style.opacity = 0;
+}
+
+function init() {
+
+	container = document.getElementById( 'container' );
+
+	scene = new THREE.Scene();
+
+	camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, .001, 100 );
+	camera.target = new THREE.Vector3( 0, 0, 0 );
+	camera.position.set( 0,4,-10 );
+	camera.lookAt( camera.target );
+	scene.add( camera );
+
+	renderer = new THREE.WebGLRenderer( { antialias: true, premultipliedAlpha: false } );
+	renderer.setPixelRatio( window.devicePixelRatio );
+	renderer.setClearColor( 0x0, 1 );
+	container.appendChild( renderer.domElement );
+
+	// definitely improve this detection
+	floatType = isMobile.any?THREE.HalfFloatType:THREE.FloatType;
+
+	renderer.sortObjects = true;
+
+	helper = new FBOHelper(renderer);
+
+	addCommonUI(container);
+
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = THREE.PCFShadowMap;
+
+	controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+	initScene();
+	onWindowResized();
+
+	window.addEventListener( 'resize', onWindowResized );
+
+	window.addEventListener('keydown', function(e) {
+		if(e.keyCode === 32 ) {
+			if( track.paused ) track.play(); else track.pause();
+		}
+		if(e.keyCode === 81 ) {
+			freeCamera = !freeCamera;
+		}
+		if(e.keyCode === 87 ) {
+			track.controls = !track.controls;
+		}
+	})
+
+	window.addEventListener( 'mousemove', function( e ) {
+		track.style.opacity = 1;
+		controlsTimeout = setTimeout(hideControls, 1000);
+		mouse.x = ( e.clientX / renderer.domElement.clientWidth ) * 2 - 1;
+		mouse.y = - ( e.clientY / renderer.domElement.clientHeight ) * 2 + 1;
+	});
+
+	renderer.domElement.addEventListener( 'touchmove', function( e ) {
+		mouse.x = ( e.touches[ 0 ].clientX / renderer.domElement.clientWidth ) * 2 - 1;
+		mouse.y = - ( e.touches[ 0 ].clientY / renderer.domElement.clientHeight ) * 2 + 1;
+	});
+
+	render();
+
+}
+
+function setBackgroundColor(r,g,b) {
+	var c = Math.round(r) * 256 * 256 + Math.round(g) * 256 + Math.round(b);
+	renderer.setClearColor(c,1.);
+	plane.material.uniforms.backgroundColor.value.setHex(c);
+	sphereMaterial.uniforms.backgroundColor.value.setHex(c);
+}
+
+function onWindowResized( event ) {
+
+	var w = container.clientWidth;
+	var h = container.clientHeight;
+
+	renderer.setSize( w, h );
+	camera.aspect = w / h;
+	camera.updateProjectionMatrix();
+
+	cam.resize(w,h);
+
+	var dPR = .5 * window.devicePixelRatio;
+	bloom.setSize( w * dPR, h * dPR );
+	resolution.set( w * dPR, h * dPR );
+	baseFBO.setSize(w * dPR, h * dPR );
+	fxaaTexture.setSize(w*dPR, h*dPR);
+	finalTexture.setSize(w*dPR, h*dPR);
+
+	snow.material.uniforms.resolution.value.set(w,h);
+	trail.material.uniforms.resolution.value.set(w,h);
+
+	helper.refreshFBO(baseFBO);
+	helper.refreshFBO(fxaaTexture.fbo);
+
+	helper.setSize(w,h);
+}
+
+var params = {
+	decay: .1,
+	persistence: .1,
+	speed: .05,
+	spread: 10,
+	scale: .025,
+	taper: 0,
+	opacity: .5
+}
+
+var lastTime = 0;
+
+function Camera() {
+
+	this.x = 0;
+	this.y = 0;
+	this.z = 0;
+
+	this.tx = 0;
+	this.ty = 0;
+	this.tz = 0;
+
+	this.camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, .001, 100 );
+	this.camera.target = new THREE.Vector3( 0, 0, 0 );
+
+	this.script = new Script();
+	this.auto = true;
+}
+
+Camera.prototype.resize = function(w,h) {
+	this.camera.aspect = w / h;
+	this.camera.updateProjectionMatrix();
+}
+
+Camera.prototype.update = function(t) {
+
+	if( this.auto ) {
+		this.script.updateValues(t,this);
+	}
+
+	this.camera.position.set(this.x, this.y, this.z );
+	//this.camera.position.x += .5 - noise.simplex2(this.y,this.z);
+	this.camera.target.set(this.x+this.tx,this.y+this.ty,this.z+this.tz);
+	this.camera.lookAt(this.camera.target);
+
+}
+
+function Script() {
+
+	this.keyframes = [];
+
+}
+
+Script.prototype.updateValues = function(t,scope) {
+	var id = this.findKeyframe(t);
+	var k = this.keyframes[id];
+	var nk = this.keyframes[id+1];
+	var dt = ( t - k.time ) / ( nk.time - k.time );
+	dt = cubicInOut(dt);
+	for(var j in k.vars){
+		scope[j] = k.vars[j] + dt * (nk.vars[j]-k.vars[j]);
+	}
+}
+
+Script.prototype.findKeyframe = function(t) {
+	for (var j=0; j < this.keyframes.length; j++){
+		if(t < this.keyframes[j].time){
+			return j-1;
+		}
+	}
+}
+
+function cubicIn(t) {
+	return Math.pow(t,3);
+}
+
+function cubicOut(t) {
+	return 1 - cubicIn(1-t);
+}
+
+function cubicInOut(t) {
+	if (t<.5) return cubicIn(t*2)/2;
+	else return 1-cubicIn((1-t)*2)/2;
+}
+
+function easeOutElastic(t) {
+	var p = 1.;
+	return Math.pow(2,-10*t)*Math.sin((t-p/4)*(2*Math.PI)/p)+1;
+}
+
+Script.prototype.addKeyframe = function( vars, time ) {
+	this.keyframes.push({vars:vars,time:time})
+}
+
+var cam = new Camera();
+var skyColor = new Script();
+skyColor.addKeyframe({r:0, g: 0, b: 0},0);
+skyColor.addKeyframe({r:0xa1, g: 0xb5, b: 0xd7},6);
+skyColor.addKeyframe({r:0xa1, g: 0xb5, b: 0xd7},38);
+skyColor.addKeyframe({r:0x30, g: 0x30, b: 0x30},42);
+skyColor.addKeyframe({r:0x30, g: 0x30, b: 0x30},80);
+skyColor.addKeyframe({r:0xff, g: 0x30, b: 0x80},90);
+skyColor.addKeyframe({r:0xff, g: 0x30, b: 0x80},120);
+skyColor.addKeyframe({r:0x30, g: 0x30, b: 0x30},130);
+skyColor.addKeyframe({r:0x30, g: 0x30, b: 0x30},200);
+
+cam.script.addKeyframe( {x:0,y:1.1,z:-2,tx:0,ty:-1,tz:.01},0);
+cam.script.addKeyframe( {x:0,y:1.3,z:-2.5,tx:0,ty:-1,tz:.01},2);
+cam.script.addKeyframe( {x:0,y:1.3,z:-2.5,tx:0,ty:-1,tz:1},6);
+cam.script.addKeyframe( {x:0,y:1.3,z:-2.5,tx:0,ty:-1,tz:1},20);
+cam.script.addKeyframe( {x:0,y:1.3,z:-2.5,tx:0,ty:0,tz:1},24);
+cam.script.addKeyframe( {x:0,y:1.1,z:-3,tx:0,ty:.5,tz:1},39);
+cam.script.addKeyframe( {x:0,y:1.1,z:-3,tx:0,ty:0,tz:1},41);
+cam.script.addKeyframe( {x:0,y:1.1,z:-4.5,tx:0,ty:0,tz:1},70);
+cam.script.addKeyframe( {x:0,y:2,z:-3,tx:0,ty:0,tz:1},128);
+cam.script.addKeyframe( {x:0,y:2,z:-3,tx:0,ty:10,tz:1},133);
+cam.script.addKeyframe( {x:0,y:2,z:-3,tx:0,ty:10,tz:1},200);
+
+var snowScript = new Script();
+snowScript.addKeyframe({persistence: .8, speed: .001, scale: .01, delta:1, opacity:.4},0);
+snowScript.addKeyframe({persistence: .8, speed: .001, scale: .01, delta:1, opacity:.4},38);
+snowScript.addKeyframe({persistence: .8, speed: .001, scale: .01, delta:1, opacity:.6},42);
+snowScript.addKeyframe({persistence: .8, speed: .001, scale: .01, delta:1, opacity:.6},52);
+snowScript.addKeyframe({persistence: 1., speed: .002, scale: .02, delta:2, opacity:.8},60);
+snowScript.addKeyframe({persistence: 1., speed: .002, scale: .02, delta:2, opacity:.8},125);
+snowScript.addKeyframe({persistence: 1., speed: .001, scale: .03, delta:1, opacity:.8},130);
+snowScript.addKeyframe({persistence: 1., speed: .001, scale: .03, delta:1, opacity:.8},200);
+
+var trailScript = new Script();
+trailScript.addKeyframe({opacity: 0., scale: .01,},0);
+trailScript.addKeyframe({opacity: 0., scale: .1,},20);
+trailScript.addKeyframe({opacity: .05, scale: .1,},22);
+trailScript.addKeyframe({opacity: .05, scale: .05,},38);
+trailScript.addKeyframe({opacity: .1, scale: .075,},42);
+trailScript.addKeyframe({opacity: .1, scale: .075,},200);
+
+var trailColorScript = new Script();
+trailColorScript.addKeyframe({r:0,g:0,b:0},0);
+trailColorScript.addKeyframe({r:0xff,g:0xff,b:0xff},3);
+trailColorScript.addKeyframe({r:0xff,g:0xff,b:0xff},38);
+trailColorScript.addKeyframe({r:0xff,g:0xea,b:0x3b},42);
+trailColorScript.addKeyframe({r:0xff,g:0xea,b:0x3b},200);
+
+var lightScript = new Script();
+lightScript.addKeyframe({overall: 0},0);
+lightScript.addKeyframe({overall: 1},3);
+lightScript.addKeyframe({overall: 1},134);
+lightScript.addKeyframe({overall: 0},137);
+lightScript.addKeyframe({overall: 0},200);
+
+var titleScript = new Script();
+titleScript.addKeyframe({opacity:0, y:0, title:0}, 0);
+titleScript.addKeyframe({opacity:0, y:-.5, title:0}, 8);
+titleScript.addKeyframe({opacity:1, y:0, title:0}, 11);
+titleScript.addKeyframe({opacity:1, y:0, title:0}, 16);
+titleScript.addKeyframe({opacity:0, y:.5, title:0}, 19);
+titleScript.addKeyframe({opacity:0, y:-.5, title:1}, 22);
+titleScript.addKeyframe({opacity:1, y:0, title:1}, 25);
+titleScript.addKeyframe({opacity:1, y:0, title:1}, 30);
+titleScript.addKeyframe({opacity:0, y:.5, title:1}, 33);
+titleScript.addKeyframe({opacity:0, y:-.5, title:2}, 130);
+titleScript.addKeyframe({opacity:1, y:0, title:2}, 133);
+titleScript.addKeyframe({opacity:1, y:0, title:2}, 200);
+
+var backdropScript = new Script();
+backdropScript.addKeyframe({fr: 0xa1, fg: 0xb5, fb: 0xd7, tr: 0, rg: 0, tb: 0, rot: -Math.PI/2},0);
+backdropScript.addKeyframe({fr: 0xa1, fg: 0xb5, fb: 0xd7, tr: 0, rg: 0, tb: 0, rot: -Math.PI/2},38);
+backdropScript.addKeyframe({fr: 0xa1, fg: 0xb5, fb: 0xd7, tr: 0, rg: 0, tb: 0, rot: -Math.PI - Math.PI/2},42);
+backdropScript.addKeyframe({fr: 0xa1, fg: 0xb5, fb: 0xd7, tr: 0, rg: 0, tb: 0, rot: -Math.PI - Math.PI/2},70);
+backdropScript.addKeyframe({fr: 0xff, fg: 0x00, fb: 0x80, tr: 0x80, rg: 0, tb: 0xff, rot: -3 *Math.PI/4},100);
+backdropScript.addKeyframe({fr: 0xff, fg: 0x00, fb: 0x80, tr: 0x80, rg: 0, tb: 0xff, rot: -3 *Math.PI/4},125);
+backdropScript.addKeyframe({fr: 0, fg: 0, fb: 0, tr: 0, rg: 0, tb: 0, rot: -3 *Math.PI/4},130);
+backdropScript.addKeyframe({fr: 0, fg: 0, fb: 0, tr: 0, rg: 0, tb: 0, rot: -3 *Math.PI/4},200);
+
+var globalSpeed = 0.875 / 2;
+// globalSpeed = 1.75
+var lastTrackTime = 0;
+var t = 0;
+
+function render() {
+
+	var trackTime = track.currentTime;
+
+	requestAnimationFrame( render );
+
+	controls.update();
+
+	var finalValues = {};
+	lightScript.updateValues(trackTime,finalValues);
+
+	var renderCamera = freeCamera?camera:cam.camera;
+	renderCamera.updateMatrix();
+	renderCamera.updateMatrixWorld();
+
+	var svalues = {}
+	snowScript.updateValues(trackTime,svalues);
+	snowSimulation.shader.uniforms.persistence.value = svalues.persistence;
+	snowSimulation.shader.uniforms.speed.value = svalues.speed;
+	snow.material.uniforms.scale.value = svalues.scale;
+	snow.material.uniforms.delta.value = svalues.delta;
+	snow.material.uniforms.opacity.value = svalues.opacity;
+
+	var tt = Math.max(0, trackTime - 94);
+	var v = tt / 30;
+	sphereGroup.material.uniforms.emissive.value = v;
+
+	for(var j=0; j<sphereLight.length;j+=4){
+		sphereLight[j+3] = sphereGroup.material.uniforms.emissive.value / 5.;
+		sphereGroup.geometry.attributes.color.array[j+3]= sphereGroup.material.uniforms.emissive.value / 5.;
+	}
+
+	var b =processSphereBeats(trackTime);
+	for(var j=0; j<b.length;j++){
+		var ptr = b[j].id*4+3;
+		var v = Maf.parabola(b[j].l,3);
+		sphereLight[ptr] = v;
+		sphereGroup.geometry.attributes.color.array[ptr] = 1;
+		snowSimulation.shader.uniforms.persistence.value = 1 + v*.5;
+		snowSimulation.shader.uniforms.speed.value = .002 + .004 * v;
+		snow.material.uniforms.delta.value = 1 + 1 * v;
+		snow.material.uniforms.opacity.value = .8;
+	}
+	sphereGroup.geometry.attributes.color.needsUpdate = true;
+
+	for( var j = 0; j < sphereData.length; j++ ) {
+		var ptr = j;
+		sphereData[ ptr ].y = sphereOriginal[ptr].y + .1*Math.max(0., trackTime - 80 - j *2.3);
+		sphereGroup.geometry.attributes.offset.array[j*3+1] = sphereData[ptr].y;
+	}
+	sphereGroup.geometry.attributes.offset.needsUpdate = true;
+
+	t += globalSpeed * (trackTime - lastTrackTime);
+	var delta = t - lastTime;
+
+	cam.update(trackTime);
+	var color = {};
+	skyColor.updateValues(trackTime, color);
+	setBackgroundColor(color.r,color.g,color.b);
+
+	sphereGroup.position.z = -t;
+	for (var j = 0; j < footprints.length; j++ ) {
+		var f = footprints[j];
+		var s = f.z + t;
+		s %= 10;
+		f.mesh.position.x = -f.x;
+		f.mesh.position.z = -s;
+		f.mesh.material.uniforms.offset.value.x = f.x;
+		f.mesh.material.uniforms.offset.value.y = s;
+	}
+
+	if( trackTime<20) {
+		trail.position.z = -10;
+	} else {
+		trail.position.z = 0;
+	}
+	//if (!track.paused) {
+
+		raycaster.setFromCamera( mouse, renderCamera );
+		intersectionPlane.lookAt( renderCamera.position );
+		var intersects = raycaster.intersectObject( intersectionPlane );
+
+		if( intersects.length && trackTime > 20) {
+			dummy.position.copy(intersects[0].point);
+			dummy.position.y = Math.max(dummy.position.y,1);
+		}
+
+		snowSimulation.shader.uniforms.decay.value = params.decay;
+		snowSimulation.shader.uniforms.spread.value = params.spread;
+		snowSimulation.shader.uniforms.time.value = t;
+		snowSimulation.shader.uniforms.delta.value = delta / ( 1 / 60. );
+		snowSimulation.render();
+		snow.material.uniforms.curPos.value = snowSimulation.front.texture;
+		snow.material.uniforms.prevPos.value = snowSimulation.back.texture;
+
+		terrainTexture.shader.uniforms.time.value = t;
+		terrainTexture.render();
+
+		plane.material.uniforms.time.value = t;
+		shadowTexture.shader.uniforms.lightPosition.value.copy(dummy.position);
+		shadowTexture.shader.uniforms.pos.value = terrainTexture.shader.uniforms.time.value;
+
+		var trailColor ={};
+		trailColorScript.updateValues(trackTime,trailColor);
+		var tC = Math.round(trailColor.r) * 256 * 256 + Math.round(trailColor.g) * 256 + Math.round(trailColor.b);
+		shadowTexture.shader.uniforms.lightColor.value.setHex(tC);
+		dummy.material.uniforms.color.value.setHex(tC);
+		trail.material.uniforms.color.value.setHex(tC);
+
+		renderer.autoClear = false;
+		shadowTexture.render();
+		renderer.autoClear = true;
+
+		blurHShadowTexture.shader.uniforms.delta.value.set(1.,0.);
+		blurHShadowTexture.shader.uniforms.source.value = shadowTexture.fbo.texture;
+		blurHShadowTexture.render();
+		blurVShadowTexture.shader.uniforms.delta.value.set(0.,1.);
+		blurVShadowTexture.shader.uniforms.source.value = blurHShadowTexture.fbo.texture;
+		blurVShadowTexture.render();
+		plane.material.uniforms.shadowMap.value = blurVShadowTexture.fbo.texture;
+
+		trailSimulation.shader.uniforms.persistence.value = 1.;
+		trailSimulation.shader.uniforms.speed.value = .01;
+		trailSimulation.shader.uniforms.decay.value = 1.;
+		trailSimulation.shader.uniforms.spread.value = .1;
+		trailSimulation.shader.uniforms.time.value = t;
+		trailSimulation.shader.uniforms.delta.value = delta / ( 1 / 60. );
+		trailSimulation.shader.uniforms.spawn.value.copy(dummy.position);
+
+		trailSimulation.shader.uniforms.persistence.value = snowSimulation.shader.uniforms.persistence.value;
+		trailSimulation.shader.uniforms.speed.value = .001;//snowSimulation.shader.uniforms.speed.value;
+		trailSimulation.shader.uniforms.decay.value = snowSimulation.shader.uniforms.decay.value;
+		trailSimulation.shader.uniforms.spread.value = .1;
+		trailSimulation.shader.uniforms.time.value = snowSimulation.shader.uniforms.time.value;
+		trailSimulation.shader.uniforms.delta.value = snowSimulation.shader.uniforms.delta.value;
+
+		trailSimulation.render();
+		trail.material.uniforms.curPos.value = trailSimulation.front.texture;
+		trail.material.uniforms.prevPos.value = trailSimulation.back.texture;
+
+	//}
+
+	var backdropValues = {};
+	backdropScript.updateValues(trackTime,backdropValues);
+	backdrop.rotation.z = backdropValues.rot;
+	var bFrom = Math.round(backdropValues.fr) * 256 * 256 + Math.round(backdropValues.fg) * 256 + Math.round(backdropValues.fb);
+	var bTo = Math.round(backdropValues.tr) * 256 * 256 + Math.round(backdropValues.tg) * 256 + Math.round(backdropValues.tb);
+	backdrop.material.uniforms.from.value.setHex(bFrom);
+	backdrop.material.uniforms.to.value.setHex(bTo);
+	sphereMaterial.uniforms.rimColor.value.setHex(bFrom);
+	plane.material.uniforms.backgroundColor.value.setHex(bFrom);
+	sphereMaterial.uniforms.backgroundColor.value.setHex(bFrom);
+	backdrop.material.uniforms.time.value = .05*t;
+
+	var titleValues = {};
+	titleScript.updateValues(trackTime,titleValues);
+	if( titleValues.title === 0 ) titleCard.material.uniforms.map.value = gloomTexture;
+	if( titleValues.title === 1 ) titleCard.material.uniforms.map.value = spiteTexture;
+	if( titleValues.title === 2 ) titleCard.material.uniforms.map.value = exploreTexture;
+	titleCard.material.uniforms.opacity.value = titleValues.opacity;
+	titleCard.position.set(0,titleValues.y,-4).applyMatrix4(renderCamera.matrix)
+	titleCard.lookAt(renderCamera.position);
+
+	var trailValues = {};
+	trailScript.updateValues(trackTime, trailValues),
+	trail.material.uniforms.opacity.value = trailValues.opacity;
+	trail.material.uniforms.scale.value = trailValues.scale;
+
+	snow.geometry.setDrawRange(0, Math.floor(snow.geometry.maxInstancedCount * trackTime / track.duration));
+	snow.material.uniforms.scale.value = params.scale;
+
+	renderer.render( scene, renderCamera, baseFBO );
+
+	finalTexture.shader.uniforms.overall.value = finalValues.overall;
+
+	bloom.render();
+	fxaaTexture.render();
+	finalTexture.shader.uniforms.inputTexture.value = fxaaTexture.fbo.texture;
+	finalTexture.render(true);
+
+	//capturer.capture(renderer.domElement);
+
+	helper.update();
+
+	lastTime = t;
+	lastTrackTime = trackTime;
+
+}
+
+window.addEventListener( 'load', init );
+
+</script>
+
+	</body>
+</html>
